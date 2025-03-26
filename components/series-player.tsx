@@ -23,35 +23,22 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useMobile } from "@/hooks/use-mobile"
 import { saveThumbnail } from "@/lib/thumbnail-manager"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { type SeriesInfo, type SeriesEpisode, getAllEpisodes } from "@/lib/series-manager"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MediaInfoCard } from "@/components/media-info-card"
 
 type AudioType = "all" | "dubbed" | "subbed"
 
-interface VideoPlayerProps {
-  item: {
-    id: string
-    name: string
-    url: string
-    logo?: string
-    thumbnail?: string
-    group?: string
-    season?: number
-    episode?: number
-    related?: Array<{
-      id: string
-      name: string
-      url: string
-      logo?: string
-      thumbnail?: string
-      season?: number
-      episode?: number
-    }>
-  }
+interface SeriesPlayerProps {
+  series: SeriesInfo
+  initialEpisode?: SeriesEpisode
   onClose: () => void
 }
 
-export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
+export function SeriesPlayer({ series, initialEpisode, onClose }: SeriesPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -64,8 +51,9 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
   const [thumbnailCaptured, setThumbnailCaptured] = useState(false)
   const [fetchingUrl, setFetchingUrl] = useState(true)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [currentEpisode, setCurrentEpisode] = useState<SeriesEpisode | undefined>(initialEpisode)
+  const [allEpisodes, setAllEpisodes] = useState<SeriesEpisode[]>([])
   const [audioType, setAudioType] = useState<AudioType>("all")
-  const [relatedContent, setRelatedContent] = useState<Array<any>>([])
   const [controlsVisible, setControlsVisible] = useState(true)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -73,6 +61,7 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
   const [isMuted, setIsMuted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [hideControlsTimeout, setHideControlsTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [seriesId, setSeriesId] = useState<number | null>(null)
 
   // Função para mostrar controles e configurar timeout para escondê-los
   const showControls = () => {
@@ -154,18 +143,29 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     }
   }
 
+  // Organizar episódios por temporada
+  useEffect(() => {
+    const episodes = getAllEpisodes(series)
+    setAllEpisodes(episodes)
+
+    // Se não houver episódio inicial, usar o primeiro
+    if (!currentEpisode && episodes.length > 0) {
+      setCurrentEpisode(episodes[0])
+    }
+  }, [series, currentEpisode])
+
   // Função para obter a URL real do vídeo
-  const fetchVideoUrl = async () => {
+  const fetchVideoUrl = async (episodeUrl: string) => {
     try {
       setFetchingUrl(true)
       setIsLoading(true)
       setError(null)
       setIsRetrying(false)
 
-      console.log("Obtendo URL real do vídeo:", item.url)
+      console.log("Obtendo URL real do vídeo:", episodeUrl)
 
       // Fazer uma solicitação para obter a URL real do vídeo
-      const response = await fetch(`/api/resolve-video-url?url=${encodeURIComponent(item.url)}`)
+      const response = await fetch(`/api/resolve-video-url?url=${encodeURIComponent(episodeUrl)}`)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -188,19 +188,12 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     }
   }
 
-  // Processar conteúdo relacionado quando o item mudar
+  // Carregar URL do vídeo quando o episódio mudar
   useEffect(() => {
-    // Se o item tiver conteúdo relacionado, processá-lo
-    if (item.related && item.related.length > 0) {
-      setRelatedContent(item.related)
-    } else {
-      setRelatedContent([])
+    if (currentEpisode?.url) {
+      fetchVideoUrl(currentEpisode.url)
     }
-  }, [item])
-
-  useEffect(() => {
-    fetchVideoUrl()
-  }, [item.url])
+  }, [currentEpisode])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -211,6 +204,7 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
         togglePlay()
       } else if (e.key === "i") {
         // Tecla I para alternar informações de mídia
+        //setShowMediaInfo((prev) => !prev)
       }
     }
 
@@ -357,14 +351,28 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     }
   }
 
+  // Função para trocar de episódio
+  const changeEpisode = (episode: SeriesEpisode) => {
+    if (currentEpisode?.id === episode.id) return
+
+    // Pausar o vídeo atual
+    if (videoRef.current && !videoRef.current.paused) {
+      videoRef.current.pause()
+    }
+
+    setCurrentEpisode(episode)
+  }
+
   // Função para tentar novamente com proxy forçado
   const retryWithProxy = async () => {
+    if (!currentEpisode) return
+
     try {
       setIsRetrying(true)
       setError(null)
 
       // Forçar o uso do proxy
-      const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(item.url)}`
+      const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(currentEpisode.url)}`
       setVideoUrl(proxyUrl)
     } catch (error) {
       console.error("Erro ao tentar com proxy:", error)
@@ -376,6 +384,8 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
 
   // Função para capturar thumbnail do vídeo atual
   const captureThumbnail = async () => {
+    if (!currentEpisode) return
+
     const video = videoRef.current
     const canvas = canvasRef.current
 
@@ -416,7 +426,7 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       const thumbnailData = canvas.toDataURL("image/jpeg", 0.8)
 
       // Salvar thumbnail
-      await saveThumbnail(item.id, thumbnailData)
+      await saveThumbnail(currentEpisode.id, thumbnailData)
 
       // Retornar ao estado anterior
       if (wasPlaying) video.play()
@@ -430,52 +440,31 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     }
   }
 
-  // Filtrar conteúdo relacionado com base no tipo de áudio selecionado
-  const filteredRelatedContent = relatedContent.filter((content) => {
+  // Filtrar episódios por tipo de áudio (dublado/legendado)
+  const filteredEpisodes = allEpisodes.filter((episode) => {
     if (audioType === "all") return true
-    const isSubbed = content.name.includes("[L]")
+    const isSubbed = episode.name.includes("[L]")
     return audioType === "subbed" ? isSubbed : !isSubbed
   })
 
-  // Função para reproduzir um item relacionado
-  const playRelatedItem = (relatedItem: any) => {
-    // Pausar o vídeo atual
-    if (videoRef.current && !videoRef.current.paused) {
-      videoRef.current.pause()
-    }
-
-    // Atualizar o item atual com o relacionado
-    const newItem = {
-      ...item,
-      id: relatedItem.id,
-      name: relatedItem.name,
-      url: relatedItem.url,
-      logo: relatedItem.logo || item.logo,
-      thumbnail: relatedItem.thumbnail || item.thumbnail,
-      season: relatedItem.season,
-      episode: relatedItem.episode,
-    }
-
-    // Reiniciar o player com o novo item
-    setVideoUrl(null)
-    setIsLoading(true)
-    setError(null)
-
-    // Buscar a URL do novo vídeo
-    fetch(`/api/resolve-video-url?url=${encodeURIComponent(relatedItem.url)}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Falha ao obter URL do vídeo relacionado")
-        return response.json()
+  // Agrupar episódios por temporada para o accordion
+  const seasonEpisodes = Object.entries(series.seasons)
+    .sort(([seasonA], [seasonB]) => Number.parseInt(seasonA) - Number.parseInt(seasonB))
+    .map(([season, data]) => {
+      // Filtrar episódios desta temporada pelo tipo de áudio
+      const filteredSeasonEpisodes = data.episodes.filter((episode) => {
+        if (audioType === "all") return true
+        const isSubbed = episode.name.includes("[L]")
+        return audioType === "subbed" ? isSubbed : !isSubbed
       })
-      .then((data) => {
-        if (!data.videoUrl) throw new Error("URL do vídeo relacionado não encontrada")
-        setVideoUrl(data.videoUrl)
-      })
-      .catch((err) => {
-        console.error("Erro ao obter URL do vídeo relacionado:", err)
-        setError(`Não foi possível reproduzir o conteúdo relacionado: ${err.message}`)
-      })
-  }
+
+      return {
+        season: Number.parseInt(season),
+        episodes: filteredSeasonEpisodes,
+      }
+    })
+    // Remover temporadas sem episódios após filtragem
+    .filter((season) => season.episodes.length > 0)
 
   // Renderizar tela de carregamento enquanto busca a URL
   if (fetchingUrl || isRetrying) {
@@ -508,13 +497,13 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
     >
-      <Card className="w-full max-w-5xl relative">
+      <Card className="w-full max-w-6xl relative">
         <Button variant="ghost" size="icon" className="absolute right-2 top-2 z-10" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
 
         <div className="flex flex-col lg:flex-row">
-          {/* Área do player de vídeo */}
+          {/* Player de vídeo */}
           <div className="lg:w-2/3">
             <CardContent className="p-0 overflow-hidden" ref={playerRef}>
               <div className="aspect-video relative">
@@ -538,12 +527,12 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
                   </div>
                 ) : (
                   <>
-                    {videoUrl && (
+                    {videoUrl && currentEpisode && (
                       <video
                         ref={videoRef}
                         src={videoUrl}
                         className="w-full h-full"
-                        poster={item.logo || item.thumbnail || "/placeholder.svg?height=720&width=1280"}
+                        poster={currentEpisode.logo || series.thumbnail || "/placeholder.svg?height=720&width=1280"}
                         crossOrigin="anonymous"
                       />
                     )}
@@ -568,10 +557,19 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
                       <div className="absolute top-4 left-4 right-4 flex justify-between items-center">
                         <div>
                           <h2 className="text-white text-xl font-semibold drop-shadow-md">
-                            {item.name.replace("[L]", "").trim()}
+                            {series.name}
+                            {currentEpisode?.seasonNumber !== undefined &&
+                              currentEpisode?.episodeNumber !== undefined && (
+                                <span className="ml-2 text-sm text-white/80">
+                                  S{currentEpisode.seasonNumber.toString().padStart(2, "0")}E
+                                  {currentEpisode.episodeNumber.toString().padStart(2, "0")}
+                                </span>
+                              )}
                           </h2>
-                          {item.group && (
-                            <p className="text-white/80 text-sm drop-shadow-md">Categoria: {item.group}</p>
+                          {currentEpisode && (
+                            <p className="text-white/80 text-sm drop-shadow-md">
+                              {currentEpisode.name.replace(/\[L\]/g, "").trim()}
+                            </p>
                           )}
                         </div>
                         <Button
@@ -703,96 +701,121 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
               </div>
 
               <div className="p-4">
-                <h2 className="text-xl font-semibold">{item.name}</h2>
-                {item.group && <p className="text-sm text-muted-foreground mt-1">Categoria: {item.group}</p>}
+                <h2 className="text-xl font-semibold">
+                  {currentEpisode ? (
+                    <>
+                      {series.name}
+                      {currentEpisode.seasonNumber !== undefined && currentEpisode.episodeNumber !== undefined && (
+                        <span className="ml-2 text-sm text-muted-foreground">
+                          S{currentEpisode.seasonNumber.toString().padStart(2, "0")}E
+                          {currentEpisode.episodeNumber.toString().padStart(2, "0")}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    series.name
+                  )}
+                </h2>
+                {currentEpisode && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {currentEpisode.name.replace(/\[L\]/g, "").trim()}
+                  </p>
+                )}
               </div>
 
               {/* Informações de mídia do TMDB - sempre visíveis */}
               <div className="px-4 pb-4">
                 <MediaInfoCard
-                  title={item.name}
-                  type={item.season !== undefined && item.episode !== undefined ? "tv" : "auto"}
-                  season={item.season}
-                  episode={item.episode}
+                  title={series.name}
+                  type="tv"
+                  season={currentEpisode?.seasonNumber}
+                  episode={currentEpisode?.episodeNumber}
                 />
               </div>
             </CardContent>
           </div>
 
-          {/* Área de conteúdo relacionado */}
+          {/* Lista de episódios */}
           <div className="lg:w-1/3 border-t lg:border-t-0 lg:border-l">
             <div className="p-4 border-b">
-              <h3 className="font-medium">Conteúdo Relacionado</h3>
+              <h3 className="font-medium">Episódios</h3>
             </div>
 
-            {relatedContent.length > 0 ? (
-              <div className="p-4">
-                <Tabs defaultValue="all" value={audioType} onValueChange={(value) => setAudioType(value as AudioType)}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="all" className="flex items-center gap-2">
-                      <Tv className="h-4 w-4" />
-                      <span>Todos</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="dubbed" className="flex items-center gap-2">
-                      <Globe className="h-4 w-4" />
-                      <span>Dublado</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="subbed" className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4" />
-                      <span>Legendado</span>
-                    </TabsTrigger>
-                  </TabsList>
+            <Tabs defaultValue="all" value={audioType} onValueChange={(value) => setAudioType(value as AudioType)}>
+              <div className="px-4 pt-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="all" className="flex items-center gap-2">
+                    <Tv className="h-4 w-4" />
+                    <span>Todos</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="dubbed" className="flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    <span>Dublado</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="subbed" className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    <span>Legendado</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
-                  <TabsContent value={audioType} className="mt-4">
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                      {filteredRelatedContent.length > 0 ? (
-                        filteredRelatedContent.map((relatedItem) => (
-                          <div
-                            key={relatedItem.id}
-                            className="flex items-center gap-3 p-2 rounded-md hover:bg-muted cursor-pointer"
-                            onClick={() => playRelatedItem(relatedItem)}
-                          >
-                            <div className="w-16 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
-                              {relatedItem.thumbnail || relatedItem.logo ? (
-                                <img
-                                  src={relatedItem.thumbnail || relatedItem.logo}
-                                  alt={relatedItem.name}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    ;(e.target as HTMLImageElement).src = "/placeholder.svg?height=48&width=64"
-                                  }}
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <Play className="h-5 w-5 text-muted-foreground" />
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">
-                                {relatedItem.name.replace("[L]", "").trim()}
-                              </p>
-                              {relatedItem.name.includes("[L]") && (
-                                <span className="text-xs text-muted-foreground">Legendado</span>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          Nenhum conteúdo{" "}
+              <TabsContent value={audioType}>
+                <ScrollArea className="h-[400px] lg:h-[600px]">
+                  <div className="p-4">
+                    {seasonEpisodes.length > 0 ? (
+                      <Accordion type="multiple" defaultValue={[`season-${seasonEpisodes[0]?.season}`]}>
+                        {seasonEpisodes.map(({ season, episodes }) => (
+                          <AccordionItem key={`season-${season}`} value={`season-${season}`}>
+                            <AccordionTrigger className="hover:bg-muted/50 px-2 rounded-md">
+                              <div className="flex items-center">
+                                <span>Temporada {season}</span>
+                                <Badge variant="outline" className="ml-2">
+                                  {episodes.length}
+                                </Badge>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="space-y-1 pl-2">
+                                {episodes.map((episode) => (
+                                  <div
+                                    key={episode.id}
+                                    className={`p-2 rounded-md cursor-pointer flex items-center hover:bg-muted ${
+                                      currentEpisode?.id === episode.id ? "bg-primary/10 text-primary" : ""
+                                    }`}
+                                    onClick={() =>
+                                      changeEpisode({
+                                        ...episode,
+                                        seasonNumber: season,
+                                        episodeNumber: episode.episode || 0,
+                                      })
+                                    }
+                                  >
+                                    <div className="mr-2 w-6 text-center text-sm">{episode.episode}</div>
+                                    <div className="flex-1 truncate">{episode.name.replace(/\[L\]/g, "").trim()}</div>
+                                    {episode.name.includes("[L]") && (
+                                      <Badge variant="outline" className="ml-2 text-xs">
+                                        LEG
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>
+                          Nenhum episódio{" "}
                           {audioType === "dubbed" ? "dublado" : audioType === "subbed" ? "legendado" : ""} disponível.
                         </p>
-                      )}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            ) : (
-              <div className="p-4 text-center text-muted-foreground">
-                <p>Nenhum conteúdo relacionado disponível.</p>
-              </div>
-            )}
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </Card>

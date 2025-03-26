@@ -1,4 +1,6 @@
 // IndexedDB wrapper para armazenar grandes dados IPTV
+import { isRelevantMatch } from "@/lib/search-utils"
+
 interface Channel {
   id: string
   name: string
@@ -387,7 +389,7 @@ function sortChannels(channels: Channel[]): Channel[] {
   })
 }
 
-// Buscar canais com paginação - versão otimizada
+// Buscar canais com paginação - versão otimizada e com busca avançada
 export const searchChannelsPaginated = async (
   term: string,
   category = "all",
@@ -448,21 +450,17 @@ export const searchChannelsPaginated = async (
       }
     })
 
-    // Otimização: Converter o termo de busca para minúsculas uma única vez
-    const searchTerm = term.toLowerCase()
-
-    // Filtrar por categoria e termo de busca
+    // Filtrar por categoria
     const filteredByCategory =
       category === "all" ? allChannels : allChannels.filter((channel) => channel.group === category)
 
-    // Otimização: Usar um algoritmo de busca mais eficiente
+    // Usar o algoritmo de busca avançada para filtrar os resultados
     const filteredChannels = filteredByCategory.filter((channel) => {
-      const name = channel.name.toLowerCase()
-      return name.includes(searchTerm)
+      return isRelevantMatch(channel.name, term)
     })
 
-    // Ordenar os resultados
-    const sortedChannels = sortChannels(filteredChannels)
+    // Ordenar os resultados por relevância
+    const sortedChannels = sortChannelsByRelevance(filteredChannels, term)
 
     // Armazenar no cache em memória
     searchCache.set(cacheKey, {
@@ -492,6 +490,93 @@ export const searchChannelsPaginated = async (
     console.error("Erro em searchChannelsPaginated:", error)
     return { channels: [], totalCount: 0, hasMore: false }
   }
+}
+
+// Adicionar esta nova função para ordenar canais por relevância
+function sortChannelsByRelevance(channels: Channel[], searchTerm: string): Channel[] {
+  // Extrair palavras-chave do termo de busca
+  const keywords = searchTerm
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((k) => k.length > 1)
+
+  // Calcular pontuação de relevância para cada canal
+  const scoredChannels = channels.map((channel) => {
+    const normalizedName = channel.name.toLowerCase()
+
+    // Calcular pontuação básica
+    let score = 0
+
+    // Verificar correspondências exatas (maior pontuação)
+    if (normalizedName.includes(searchTerm.toLowerCase())) {
+      score += 100
+    }
+
+    // Verificar correspondências de palavras-chave individuais
+    for (const keyword of keywords) {
+      if (normalizedName.includes(keyword)) {
+        score += 10
+      }
+    }
+
+    // Usar o algoritmo avançado para calcular pontuação adicional
+    const relevanceScore = calculateRelevanceScore(channel.name, keywords)
+    score += relevanceScore * 50
+
+    // Bônus para séries com temporada/episódio
+    if (channel.season !== undefined && channel.episode !== undefined) {
+      score += 5
+    }
+
+    return { channel, score }
+  })
+
+  // Ordenar por pontuação (maior primeiro)
+  return scoredChannels.sort((a, b) => b.score - a.score).map((item) => item.channel)
+}
+
+// Adicionar a função calculateRelevanceScore se não estiver importando do search-utils
+function calculateRelevanceScore(text: string, keywords: string[]): number {
+  if (!keywords.length) return 0
+
+  const normalizedText = text.toLowerCase()
+  let matchCount = 0
+  let totalScore = 0
+
+  for (const keyword of keywords) {
+    // Verificar correspondência exata da palavra
+    if (normalizedText.includes(keyword)) {
+      matchCount++
+      totalScore += 1.0 // Pontuação máxima para correspondência exata
+    } else {
+      // Verificar correspondência parcial (pelo menos 3 caracteres)
+      if (keyword.length >= 3) {
+        // Verificar se pelo menos 3 caracteres consecutivos do keyword estão no texto
+        for (let i = 0; i <= keyword.length - 3; i++) {
+          const subKeyword = keyword.substring(i, i + 3)
+          if (normalizedText.includes(subKeyword)) {
+            matchCount++
+            // Pontuação parcial baseada no tamanho da correspondência
+            totalScore += 0.5 * (subKeyword.length / keyword.length)
+            break
+          }
+        }
+      }
+    }
+  }
+
+  // Calcular pontuação final
+  // Fator 1: Proporção de palavras-chave encontradas
+  const keywordCoverageScore = matchCount / keywords.length
+
+  // Fator 2: Pontuação média das correspondências
+  const matchQualityScore = matchCount > 0 ? totalScore / matchCount : 0
+
+  // Fator 3: Bônus para correspondências de múltiplas palavras
+  const multiWordBonus = matchCount > 1 ? 0.2 : 0
+
+  // Combinar os fatores (com pesos)
+  return Math.min(1, keywordCoverageScore * 0.5 + matchQualityScore * 0.3 + multiWordBonus)
 }
 
 // Verificar se existem dados IPTV

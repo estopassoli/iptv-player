@@ -2,17 +2,17 @@
 
 import type React from "react"
 
-import { Button } from "@/components/ui/button"
-import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
-import { storeIPTVData } from "@/lib/idb-storage"
-import { parseM3U } from "@/lib/m3u-parser"
-import { motion } from "framer-motion"
-import { LinkIcon, Loader2, UploadIcon } from "lucide-react"
 import { useState } from "react"
+import { motion } from "framer-motion"
+import { UploadIcon, LinkIcon, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
+import { useToast } from "@/hooks/use-toast"
+import { parseM3U } from "@/lib/m3u-parser"
+import { storeIPTVData } from "@/lib/idb-storage"
 
 export function Upload() {
   const [isLoading, setIsLoading] = useState(false)
@@ -175,7 +175,7 @@ export function Upload() {
             </div>
           )}
         </CardContent>
-      </div>
+      </Card>
     </motion.div>
   )
 }

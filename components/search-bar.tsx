@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search } from "lucide-react"
+import { Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { hasIPTVData } from "@/lib/idb-storage"
 
 export function SearchBar() {
@@ -33,6 +34,15 @@ export function SearchBar() {
     return () => clearTimeout(debounceTimeout)
   }, [searchTerm])
 
+  const handleClearSearch = () => {
+    setSearchTerm("")
+    // Disparar evento de busca com termo vazio para limpar resultados
+    const event = new CustomEvent("iptv-search", {
+      detail: { searchTerm: "" },
+    })
+    window.dispatchEvent(event)
+  }
+
   if (!hasContent) return null
 
   return (
@@ -46,10 +56,20 @@ export function SearchBar() {
       <Input
         type="search"
         placeholder="Buscar canais, filmes ou séries..."
-        className="pl-10"
+        className="pl-10 pr-10"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
       />
+      {searchTerm && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+          onClick={handleClearSearch}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
     </motion.div>
   )
 }

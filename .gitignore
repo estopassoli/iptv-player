@@ -7,8 +7,6 @@
 /.next/
 /out/
 
-sw.js
-workbox-*.js
 # production
 /build
 
