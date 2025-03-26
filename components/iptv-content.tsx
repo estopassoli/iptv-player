@@ -11,7 +11,7 @@ import { useMobile } from "@/hooks/use-mobile"
 import { getAllCategories, getChannelsPaginated, hasIPTVData, searchChannelsPaginated } from "@/lib/idb-storage"
 import { getThumbnail } from "@/lib/thumbnail-manager"
 import { AnimatePresence, motion } from "framer-motion"
-import { Folder, Globe, Loader2, MessageSquare, PlayCircle, RefreshCw, Search, Tv, X } from "lucide-react"
+import { Clapperboard, Film, Folder, Globe, Loader2, MessageSquare, PlayCircle, RefreshCw, Search, Tv, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 interface Channel {
@@ -275,7 +275,7 @@ export function IPTVContent() {
       ) : (
         <div className="flex flex-col md:flex-row gap-4">
           {/* Sidebar com categorias */}
-          <div className="w-72">
+          <div className="w-80 px-2">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -301,7 +301,7 @@ export function IPTVContent() {
                 <span>Categorias</span>
                 <Badge variant="outline">{totalItems}</Badge>
               </div>
-              <ScrollArea className="h-[calc(100vh-300px)] flex flex-col w-full px-1">
+              <ScrollArea className="h-[calc(100vh-300px)]">
                 <div className="p-1">
                   <Button
                     variant={activeCategory === "all" ? "default" : "ghost"}
@@ -320,6 +320,7 @@ export function IPTVContent() {
                       onClick={() => setActiveCategory(category)}
                       className="w-full justify-start mb-1 truncate !capitalize"
                     >
+                      {category.includes('Filmes') ? <Film className="h-4 w-4 mr-2" /> : category.includes('Series') ? <Clapperboard className="h-4 w-4 mr-2" /> : category.includes('Canais') ? <Tv className="h-4 w-4 mr-2" /> : <Tv className="h-4 w-4 mr-2" />}
                       {category}
                     </Button>
                   ))}
@@ -329,7 +330,7 @@ export function IPTVContent() {
           </div>
           <div className="border-r border-dashed" />
           {/* Área de conteúdo principal */}
-          <div className="flex-1 truncate flex-grow-0">
+          <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">
                 {debouncedSearchTerm
