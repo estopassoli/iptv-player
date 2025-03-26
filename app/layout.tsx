@@ -14,15 +14,15 @@ export const metadata = {
   openGraph: {
     title: "M3U IPTV Player - O Melhor Player IPTV Online",
     description: "Assista TV ao vivo online com o melhor player IPTV compatível com listas M3U.",
-    url: "https://iptv-player.vercel.app",
+    url: "https://iptv-player-chi.vercel.app",
     type: "website",
-    image: "https://iptv-player.vercel.app/logo.png",
+    image: "https://iptv-player-chi.vercel.app/logo.png",
   },
   twitter: {
     card: "summary_large_image",
     title: "M3U IPTV Player - Assista TV Online Gratuitamente",
     description: "Player IPTV compatível com listas M3U para assistir TV ao vivo online.",
-    image: "https://iptv-player.vercel.app/logo.png",
+    image: "https://iptv-player-chi.vercel.app/logo.png",
   }
 }
 
