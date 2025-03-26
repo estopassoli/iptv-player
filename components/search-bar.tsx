@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { hasIPTVData } from "@/lib/idb-storage"
 import { motion } from "framer-motion"
 import { Search, X } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { hasIPTVData } from "@/lib/idb-storage"
+import { useEffect, useState } from "react"
 
 export function SearchBar() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -54,7 +54,6 @@ export function SearchBar() {
     >
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
-        type="search"
         placeholder="Buscar canais, filmes ou séries..."
         className="pl-10 pr-10"
         value={searchTerm}
