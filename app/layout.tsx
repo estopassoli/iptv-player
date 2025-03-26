@@ -23,7 +23,13 @@ export const metadata = {
     title: "M3U IPTV Player - Assista TV Online Gratuitamente",
     description: "Player IPTV compatível com listas M3U para assistir TV ao vivo online.",
     image: "https://iptv-player-chi.vercel.app/logo.png",
-  }
+  },
+  themeColor: "#000000",
+  icons: {
+    icon: "/icons/icon-192x192.png",
+    apple: "/icons/icon-512x512.png",
+  },
+  manifest: "/manifest.json",
 }
 
 export default function RootLayout({
