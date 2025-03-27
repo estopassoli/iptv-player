@@ -2,29 +2,29 @@
 
 import type React from "react"
 
-import { useEffect, useRef, useState } from "react"
-import { motion } from "framer-motion"
-import {
-  X,
-  Maximize,
-  Volume2,
-  Play,
-  Pause,
-  Loader2,
-  Camera,
-  AlertCircle,
-  RefreshCw,
-  Globe,
-  MessageSquare,
-  Tv,
-} from "lucide-react"
+import { MediaInfoCard } from "@/components/media-info-card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useMobile } from "@/hooks/use-mobile"
 import { saveThumbnail } from "@/lib/thumbnail-manager"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MediaInfoCard } from "@/components/media-info-card"
+import { motion } from "framer-motion"
+import {
+  AlertCircle,
+  Globe,
+  Loader2,
+  Maximize,
+  MessageSquare,
+  Pause,
+  Play,
+  RefreshCw,
+  Tv,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 type AudioType = "all" | "dubbed" | "subbed"
 
@@ -73,6 +73,12 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
   const [isMuted, setIsMuted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [hideControlsTimeout, setHideControlsTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [lastClickTime, setLastClickTime] = useState(0)
+  const [bufferProgress, setBufferProgress] = useState(0)
+  const [seekInProgress, setSeekInProgress] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
+  const [seekTime, setSeekTime] = useState<number | null>(null)
+  const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Função para mostrar controles e configurar timeout para escondê-los
   const showControls = () => {
@@ -83,12 +89,12 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       clearTimeout(hideControlsTimeout)
     }
 
-    // Configurar novo timeout para esconder controles após 3 segundos
+    // Configurar novo timeout para esconder controles após 4 segundos
     const timeout = setTimeout(() => {
       if (!videoRef.current?.paused) {
         setControlsVisible(false)
       }
-    }, 3000)
+    }, 4000) // Changed from 3000 to 4000
 
     setHideControlsTimeout(timeout)
   }
@@ -108,8 +114,45 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     const progressBarWidth = progressBar.clientWidth
     const seekPercentage = clickPosition / progressBarWidth
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = seekPercentage * videoRef.current.duration
+    if (videoRef.current && !seekInProgress && videoRef.current.readyState >= 1) {
+      try {
+        setSeekInProgress(true)
+        setIsBuffering(true)
+
+        // Calcular o tempo baseado na porcentagem
+        const newTime = seekPercentage * videoRef.current.duration
+
+        // Garantir que o tempo não exceda a duração do vídeo
+        const safeTime = Math.min(newTime, videoRef.current.duration - 0.1)
+
+        // Mostrar o tempo de seek no UI
+        setSeekTime(safeTime)
+
+        // Limpar qualquer timeout anterior
+        if (seekTimeoutRef.current) {
+          clearTimeout(seekTimeoutRef.current)
+        }
+
+        // Definir um timeout para limpar o tempo de seek após 2 segundos
+        seekTimeoutRef.current = setTimeout(() => {
+          setSeekTime(null)
+          seekTimeoutRef.current = null
+        }, 2000)
+
+        // Aplicar o seek
+        videoRef.current.currentTime = safeTime
+      } catch (err) {
+        console.error("Erro ao definir tempo do vídeo:", err)
+        // Ignorar erros de decode que não interrompem a reprodução
+        if (err instanceof DOMException && err.name === "NotSupportedError") {
+          console.warn("Erro de decode ignorado durante seek")
+        }
+      } finally {
+        // Resetar o estado de seek após um pequeno delay
+        setTimeout(() => {
+          setSeekInProgress(false)
+        }, 500)
+      }
     }
   }
 
@@ -117,15 +160,44 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
   const toggleFullscreen = () => {
     if (!playerRef.current) return
 
-    if (!document.fullscreenElement) {
-      playerRef.current.requestFullscreen().catch((err) => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`)
-      })
-      setIsFullscreen(true)
-    } else {
-      document.exitFullscreen()
-      setIsFullscreen(false)
+    try {
+      if (!document.fullscreenElement) {
+        playerRef.current
+          .requestFullscreen()
+          .then(() => {
+            setIsFullscreen(true)
+          })
+          .catch((err) => {
+            console.error(`Error attempting to enable fullscreen: ${err.message}`)
+          })
+      } else {
+        document
+          .exitFullscreen()
+          .then(() => {
+            setIsFullscreen(false)
+          })
+          .catch((err) => {
+            console.error(`Error attempting to exit fullscreen: ${err.message}`)
+          })
+      }
+    } catch (err) {
+      console.error("Fullscreen API error:", err)
     }
+  }
+
+  // Função para detectar duplo clique
+  const handleVideoClick = (e: React.MouseEvent) => {
+    const currentTime = new Date().getTime()
+    const timeDiff = currentTime - lastClickTime
+
+    // Se o tempo entre cliques for menor que 300ms, é um duplo clique
+    if (timeDiff < 300) {
+      toggleFullscreen()
+    } else {
+      togglePlay()
+    }
+
+    setLastClickTime(currentTime)
   }
 
   // Função para alternar mudo
@@ -224,6 +296,9 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
 
     const video = videoRef.current
 
+    // Configurar preload para melhorar a experiência de seek
+    video.preload = "auto"
+
     // Adicionar event listeners para monitorar o estado do vídeo
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => setIsPlaying(false)
@@ -235,11 +310,18 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       const errorCode = target.error?.code
       const errorMessage = target.error?.message || ""
 
+      // Se não houver código de erro ou mensagem, usar uma mensagem genérica
+      if (!errorCode && !errorMessage) {
+        setError("Erro desconhecido ao reproduzir o vídeo. Tente novamente ou use o proxy.")
+        setIsLoading(false)
+        return
+      }
+
       if (
         errorMessage.includes("Mixed Content") ||
         errorMessage.includes("CORS") ||
         errorMessage.includes("blocked") ||
-        (videoUrl.startsWith("http:") && window.location.protocol === "https:")
+        (videoUrl?.startsWith("http:") && window.location.protocol === "https:")
       ) {
         setError("Erro de segurança: O vídeo está em HTTP mas a página está em HTTPS. Tente novamente usando o proxy.")
       } else {
@@ -248,33 +330,28 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
 
       setIsLoading(false)
     }
-    const handleWaiting = () => setIsLoading(true)
-    const handlePlaying = () => setIsLoading(false)
+
+    const handleWaiting = () => {
+      setIsLoading(true)
+      setIsBuffering(true)
+    }
+
+    const handlePlaying = () => {
+      setIsLoading(false)
+      setIsBuffering(false)
+    }
+
     const handleCanPlay = () => {
       setIsLoading(false)
       setDuration(video.duration)
-
-      // Tentar iniciar a reprodução automaticamente
-      video.play().catch((err) => {
-        console.warn("Reprodução automática bloqueada:", err)
-        setIsPlaying(false)
-      })
-
-      // Tentar entrar em tela cheia automaticamente
-      if (playerRef.current && !isFullscreen) {
-        try {
-          playerRef.current.requestFullscreen().catch((err) => {
-            console.warn("Tela cheia automática bloqueada:", err)
-          })
-          setIsFullscreen(true)
-        } catch (err) {
-          console.warn("Erro ao tentar entrar em tela cheia:", err)
-        }
-      }
     }
 
     const handleTimeUpdate = () => {
       updateProgress()
+      // Se estiver em buffering e o vídeo está reproduzindo, desativar o buffering
+      if (isBuffering && !video.paused && !video.seeking) {
+        setIsBuffering(false)
+      }
     }
 
     const handleVolumeChange = () => {
@@ -283,7 +360,33 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     }
 
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const isInFullscreen = !!document.fullscreenElement
+      setIsFullscreen(isInFullscreen)
+
+      // Show controls initially when entering fullscreen, then let the normal timeout handle hiding
+      if (isInFullscreen) {
+        showControls()
+      }
+    }
+
+    const handleProgress = () => {
+      if (videoRef.current) {
+        const buffered = videoRef.current.buffered
+        if (buffered.length > 0) {
+          const bufferedEnd = buffered.end(buffered.length - 1)
+          const duration = videoRef.current.duration
+          const bufferedPercent = (bufferedEnd / duration) * 100
+          setBufferProgress(bufferedPercent)
+        }
+      }
+    }
+
+    const handleSeeking = () => {
+      setIsBuffering(true)
+    }
+
+    const handleSeeked = () => {
+      setIsBuffering(false)
     }
 
     video.addEventListener("play", handlePlay)
@@ -294,6 +397,9 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     video.addEventListener("canplay", handleCanPlay)
     video.addEventListener("timeupdate", handleTimeUpdate)
     video.addEventListener("volumechange", handleVolumeChange)
+    video.addEventListener("progress", handleProgress)
+    video.addEventListener("seeking", handleSeeking)
+    video.addEventListener("seeked", handleSeeked)
     document.addEventListener("fullscreenchange", handleFullscreenChange)
 
     // Limpar event listeners
@@ -306,14 +412,21 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       video.removeEventListener("canplay", handleCanPlay)
       video.removeEventListener("timeupdate", handleTimeUpdate)
       video.removeEventListener("volumechange", handleVolumeChange)
+      video.removeEventListener("progress", handleProgress)
+      video.removeEventListener("seeking", handleSeeking)
+      video.removeEventListener("seeked", handleSeeked)
       document.removeEventListener("fullscreenchange", handleFullscreenChange)
 
       // Limpar timeout ao desmontar
       if (hideControlsTimeout) {
         clearTimeout(hideControlsTimeout)
       }
+
+      if (seekTimeoutRef.current) {
+        clearTimeout(seekTimeoutRef.current)
+      }
     }
-  }, [videoUrl, hideControlsTimeout, isFullscreen])
+  }, [videoUrl, hideControlsTimeout, isFullscreen, isBuffering])
 
   // Adicionar event listeners para mostrar/esconder controles ao mover o mouse
   useEffect(() => {
@@ -348,10 +461,20 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
     if (!videoRef.current) return
 
     if (videoRef.current.paused) {
-      videoRef.current.play().catch((err) => {
-        console.error("Erro ao reproduzir:", err)
-        setError("Não foi possível reproduzir este conteúdo.")
-      })
+      try {
+        videoRef.current.play().catch((err) => {
+          console.error("Erro ao reproduzir:", err)
+          // Verificar se o erro tem uma mensagem antes de exibi-lo
+          if (err && err.message) {
+            setError(`Não foi possível reproduzir este conteúdo: ${err.message}`)
+          } else {
+            setError("Não foi possível reproduzir este conteúdo. Tente novamente ou use o proxy.")
+          }
+        })
+      } catch (err) {
+        console.error("Exceção ao tentar reproduzir:", err)
+        setError("Erro ao tentar reproduzir o vídeo. Tente novamente.")
+      }
     } else {
       videoRef.current.pause()
     }
@@ -477,6 +600,21 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       })
   }
 
+  // Formatar tempo em formato MM:SS ou HH:MM:SS
+  const formatTime = (timeInSeconds: number) => {
+    if (isNaN(timeInSeconds)) return "00:00"
+
+    const hours = Math.floor(timeInSeconds / 3600)
+    const minutes = Math.floor((timeInSeconds % 3600) / 60)
+    const seconds = Math.floor(timeInSeconds % 60)
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+    }
+
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+  }
+
   // Renderizar tela de carregamento enquanto busca a URL
   if (fetchingUrl || isRetrying) {
     return (
@@ -509,9 +647,19 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <Card className="w-full max-w-5xl relative">
-        <Button variant="ghost" size="icon" className="absolute right-2 top-2 z-10" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        {isFullscreen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white absolute right-2 top-2 z-10"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose()
+            }}
+          >
+            <X className="h-6 w-6" />
+          </Button>
+        )}
 
         <div className="flex flex-col lg:flex-row">
           {/* Área do player de vídeo */}
@@ -545,148 +693,272 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
                         className="w-full h-full"
                         poster={item.logo || item.thumbnail || "/placeholder.svg?height=720&width=1280"}
                         crossOrigin="anonymous"
+                        onClick={handleVideoClick}
+                        preload="auto"
                       />
                     )}
 
                     {/* Canvas escondido para captura de thumbnail */}
                     <canvas ref={canvasRef} className="hidden" />
 
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-background/50">
-                        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    {/* Indicador de buffering */}
+                    {isBuffering && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-50">
+                        <div className="flex flex-col items-center">
+                          <Loader2 className="h-12 w-12 animate-spin text-primary mb-2" />
+                          <p className="text-white text-sm bg-black/60 px-3 py-1 rounded-md">
+                            {seekTime !== null ? `Avançando para ${formatTime(seekTime)}...` : "Carregando..."}
+                          </p>
+                        </div>
                       </div>
                     )}
 
                     {/* Controles estilo Netflix */}
                     <div
-                      className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300 ${
+                      className={`absolute inset-0 flex flex-col justify-between transition-opacity duration-300 ${
                         controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"
                       }`}
-                      onClick={togglePlay}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Título e informações no topo */}
-                      <div className="absolute top-4 left-4 right-4 flex justify-between items-center">
-                        <div>
-                          <h2 className="text-white text-xl font-semibold drop-shadow-md">
-                            {item.name.replace("[L]", "").trim()}
-                          </h2>
-                          {item.group && (
-                            <p className="text-white/80 text-sm drop-shadow-md">Categoria: {item.group}</p>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-white"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onClose()
-                          }}
-                        >
-                          <X className="h-6 w-6" />
-                        </Button>
-                      </div>
-
-                      {/* Botão de play/pause centralizado */}
-                      <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {!isPlaying && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-20 w-20 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20"
-                            onClick={togglePlay}
-                          >
-                            <Play className="h-10 w-10 text-white" />
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Controles inferiores */}
-                      <div
-                        className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* Barra de progresso */}
-                        <div
-                          className="w-full h-1 bg-white/30 rounded-full mb-4 cursor-pointer relative"
-                          onClick={setVideoTime}
-                        >
-                          <div
-                            className="absolute top-0 left-0 h-full bg-primary rounded-full"
-                            style={{ width: `${progress}%` }}
-                          />
-                          <div
-                            className="absolute top-0 left-0 h-3 w-3 bg-primary rounded-full -mt-1"
-                            style={{ left: `${progress}%` }}
-                          />
-                        </div>
-
-                        {/* Botões de controle */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <Button variant="ghost" size="icon" className="text-white" onClick={togglePlay}>
-                              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                            </Button>
-
-                            {/* Controle de volume */}
-                            <div className="flex items-center space-x-2">
-                              <Button variant="ghost" size="icon" className="text-white" onClick={toggleMute}>
-                                {isMuted ? (
-                                  <Volume2 className="h-5 w-5 text-white/50" />
-                                ) : (
-                                  <Volume2 className="h-5 w-5" />
-                                )}
-                              </Button>
-                              <div className="w-20 h-1 bg-white/30 rounded-full cursor-pointer hidden md:block">
-                                <div
-                                  className="h-full bg-white rounded-full"
-                                  style={{ width: `${isMuted ? 0 : volume * 100}%` }}
-                                  onClick={(e) => {
-                                    const rect = e.currentTarget.getBoundingClientRect()
-                                    const x = e.clientX - rect.left
-                                    adjustVolume(x / rect.width)
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Tempo */}
-                            <div className="text-white text-sm hidden md:block">
-                              {videoRef.current
-                                ? `${Math.floor(videoRef.current.currentTime / 60)}:${Math.floor(
-                                    videoRef.current.currentTime % 60,
-                                  )
-                                    .toString()
-                                    .padStart(2, "0")} / ${Math.floor(duration / 60)}:${Math.floor(duration % 60)
-                                    .toString()
-                                    .padStart(2, "0")}`
-                                : "0:00 / 0:00"}
-                            </div>
+                      {/* Título e informações no topo com gradiente melhorado */}
+                      <div className="w-full bg-gradient-to-b from-black/90 via-black/60 to-transparent pt-4 pb-8">
+                        <div className="px-4 flex justify-between items-center">
+                          <div>
+                            <h2 className="text-white text-xl font-semibold drop-shadow-md">
+                              {item.name.replace("[L]", "").trim()}
+                            </h2>
+                            {item.group && (
+                              <p className="text-white/80 text-sm drop-shadow-md">Categoria: {item.group}</p>
+                            )}
                           </div>
 
-                          <div className="flex items-center space-x-2">
-                            {/* Botão para capturar thumbnail */}
+                          {isFullscreen && (
                             <Button
                               variant="ghost"
                               size="icon"
                               className="text-white"
-                              onClick={captureThumbnail}
-                              disabled={capturingThumbnail || isLoading}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onClose()
+                              }}
                             >
-                              {capturingThumbnail ? (
-                                <Loader2 className="h-5 w-5 animate-spin" />
-                              ) : (
-                                <Camera className="h-5 w-5" />
-                              )}
+                              <X className="h-6 w-6" />
                             </Button>
+                          )}
+                        </div>
+                      </div>
 
-                            {/* Botão de tela cheia */}
-                            <Button variant="ghost" size="icon" className="text-white" onClick={toggleFullscreen}>
-                              <Maximize className="h-5 w-5" />
-                            </Button>
+                      {/* Botões centrais com glasmorfismo */}
+                      <div
+                        className="absolute inset-0 flex items-center justify-center gap-4 opacity-0 hover:opacity-100 transition-opacity duration-300"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* Botão de retroceder 15s */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-14 w-14 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 relative overflow-hidden group"
+                          onClick={() => {
+                            if (videoRef.current) {
+                              videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 15)
+                            }
+                          }}
+                        >
+                          <span className="absolute inset-0 w-full h-full scale-0 rounded-full opacity-40 bg-white/30 group-active:scale-100 group-active:opacity-0 transition-all duration-500"></span>
+                          <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="text-white"
+                          >
+                            <path
+                              d="M12.5 8C9.85 8 7.45 8.99 5.6 10.6L2 7V16H11L7.38 12.38C8.77 11.22 10.54 10.5 12.5 10.5C16.04 10.5 19.05 12.81 20.1 16L22.47 15.22C21.08 11.03 17.15 8 12.5 8Z"
+                              fill="currentColor"
+                            />
+                            <text x="12" y="19" textAnchor="middle" fill="currentColor" fontSize="8" fontWeight="bold">
+                              15
+                            </text>
+                          </svg>
+                        </Button>
+
+                        {/* Botão de play/pause */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-16 w-16 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 relative overflow-hidden group"
+                          onClick={togglePlay}
+                        >
+                          <span className="absolute inset-0 w-full h-full scale-0 rounded-full opacity-40 bg-white/30 group-active:scale-100 group-active:opacity-0 transition-all duration-500"></span>
+                          {isPlaying ? (
+                            <Pause className="h-8 w-8 text-white" />
+                          ) : (
+                            <Play className="h-8 w-8 text-white" />
+                          )}
+                        </Button>
+
+                        {/* Botão de avançar 15s */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-14 w-14 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 relative overflow-hidden group"
+                          onClick={() => {
+                            if (videoRef.current) {
+                              videoRef.current.currentTime = Math.min(
+                                videoRef.current.duration,
+                                videoRef.current.currentTime + 15,
+                              )
+                            }
+                          }}
+                        >
+                          <span className="absolute inset-0 w-full h-full scale-0 rounded-full opacity-40 bg-white/30 group-active:scale-100 group-active:opacity-0 transition-all duration-500"></span>
+                          <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="text-white"
+                          >
+                            <path
+                              d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8C6.85 8 2.92 11.03 1.54 15.22L3.9 16C4.95 12.81 7.96 10.5 11.5 10.5C13.45 10.5 15.23 11.22 16.62 12.38L13 16H22V7L18.4 10.6Z"
+                              fill="currentColor"
+                            />
+                            <text x="12" y="19" textAnchor="middle" fill="currentColor" fontSize="8" fontWeight="bold">
+                              15
+                            </text>
+                          </svg>
+                        </Button>
+                      </div>
+
+                      {/* Controles inferiores com gradiente melhorado */}
+                      <div className="w-full bg-gradient-to-t from-black/90 via-black/60 to-transparent pb-4 pt-8 z-50">
+                        <div className="px-4" onClick={(e) => e.stopPropagation()}>
+                          {/* Barra de progresso com tooltip de tempo */}
+                          <div className="relative mb-4">
+                            <div
+                              className="w-full h-1 bg-white/30 rounded-full cursor-pointer relative group"
+                              onClick={setVideoTime}
+                              onMouseMove={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const offsetX = e.clientX - rect.left
+                                const percentage = offsetX / rect.width
+                                const timeTooltip = document.getElementById("time-tooltip")
+                                if (timeTooltip && videoRef.current) {
+                                  const tooltipTime = percentage * videoRef.current.duration
+                                  timeTooltip.textContent = formatTime(tooltipTime)
+                                  timeTooltip.style.left = `${offsetX}px`
+                                  timeTooltip.style.opacity = "1"
+                                }
+                              }}
+                              onMouseLeave={() => {
+                                const timeTooltip = document.getElementById("time-tooltip")
+                                if (timeTooltip) {
+                                  timeTooltip.style.opacity = "0"
+                                }
+                              }}
+                            >
+                              {/* Indicador de buffer */}
+                              <div
+                                className="absolute top-0 left-0 h-full bg-white/50 rounded-full"
+                                style={{ width: `${bufferProgress}%` }}
+                              />
+                              <div
+                                className="absolute top-0 left-0 h-full bg-primary rounded-full"
+                                style={{ width: `${progress}%` }}
+                              />
+                              <div
+                                className="absolute top-0 left-0 h-3 w-3 bg-primary rounded-full -mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                style={{ left: `${progress}%` }}
+                              />
+
+                              {/* Tooltip de tempo */}
+                              <div
+                                id="time-tooltip"
+                                className="absolute bottom-4 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 pointer-events-none transition-opacity"
+                                style={{ left: "0%" }}
+                              >
+                                00:00
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botões de controle */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-4">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-white"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  togglePlay()
+                                }}
+                              >
+                                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                              </Button>
+
+                              {/* Controle de volume */}
+                              <div className="flex items-center space-x-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-white"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleMute()
+                                  }}
+                                >
+                                  {isMuted ? (
+                                    <VolumeX className="h-5 w-5 text-white/50" />
+                                  ) : (
+                                    <Volume2 className="h-5 w-5" />
+                                  )}
+                                </Button>
+                                <div
+                                  className="w-20 h-1 bg-white/30 rounded-full cursor-pointer hidden md:block relative group"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const rect = e.currentTarget.getBoundingClientRect()
+                                    const x = e.clientX - rect.left
+                                    const newVolume = Math.max(0, Math.min(1, x / rect.width))
+                                    adjustVolume(newVolume)
+                                  }}
+                                >
+                                  <div
+                                    className="h-full bg-white rounded-full"
+                                    style={{ width: `${isMuted ? 0 : volume * 100}%` }}
+                                  />
+                                  <div
+                                    className="absolute top-1/2 -mt-1.5 -ml-1.5 h-3 w-3 rounded-full bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    style={{ left: `${isMuted ? 0 : volume * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Tempo */}
+                              <div className="text-white text-sm hidden md:block">
+                                {videoRef.current && duration
+                                  ? `${formatTime(videoRef.current.currentTime)} / ${formatTime(duration)}`
+                                  : "00:00 / 00:00"}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              {/* Botão de tela cheia */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-white"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleFullscreen()
+                                }}
+                              >
+                                <Maximize className="h-5 w-5" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -703,8 +975,8 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
               </div>
 
               <div className="p-4">
-                <h2 className="text-xl font-semibold">{item.name}</h2>
-                {item.group && <p className="text-sm text-muted-foreground mt-1">Categoria: {item.group}</p>}
+                <h2 className="text-xl font-semibold truncate">{item.name}</h2>
+                {item.group && <p className="text-sm text-muted-foreground mt-1 truncate">Categoria: {item.group}</p>}
               </div>
 
               {/* Informações de mídia do TMDB - sempre visíveis */}
@@ -721,8 +993,11 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
 
           {/* Área de conteúdo relacionado */}
           <div className="lg:w-1/3 border-t lg:border-t-0 lg:border-l">
-            <div className="p-4 border-b">
+            <div className="p-4 border-b flex justify-between items-center">
               <h3 className="font-medium">Conteúdo Relacionado</h3>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
 
             {relatedContent.length > 0 ? (

@@ -1,5 +1,5 @@
 // IndexedDB wrapper para armazenar grandes dados IPTV
-import { isRelevantMatch } from "@/lib/search-utils"
+import { buscarPorRegex, calculateRelevanceScore, isRelevantMatch } from "@/lib/search-utils"
 
 interface Channel {
   id: string
@@ -492,7 +492,7 @@ export const searchChannelsPaginated = async (
   }
 }
 
-// Adicionar esta nova função para ordenar canais por relevância
+// Modificar a função sortChannelsByRelevance para dar prioridade à correspondência por regex
 function sortChannelsByRelevance(channels: Channel[], searchTerm: string): Channel[] {
   // Extrair palavras-chave do termo de busca
   const keywords = searchTerm
@@ -503,6 +503,11 @@ function sortChannelsByRelevance(channels: Channel[], searchTerm: string): Chann
   // Calcular pontuação de relevância para cada canal
   const scoredChannels = channels.map((channel) => {
     const normalizedName = channel.name.toLowerCase()
+
+    // Verificar correspondência por regex primeiro (maior pontuação)
+    if (buscarPorRegex(channel.name, searchTerm)) {
+      return { channel, score: 200 } // Pontuação mais alta para correspondências de regex
+    }
 
     // Calcular pontuação básica
     let score = 0
@@ -536,48 +541,48 @@ function sortChannelsByRelevance(channels: Channel[], searchTerm: string): Chann
 }
 
 // Adicionar a função calculateRelevanceScore se não estiver importando do search-utils
-function calculateRelevanceScore(text: string, keywords: string[]): number {
-  if (!keywords.length) return 0
+// function calculateRelevanceScore(text: string, keywords: string[]): number {
+//   if (!keywords.length) return 0
 
-  const normalizedText = text.toLowerCase()
-  let matchCount = 0
-  let totalScore = 0
+//   const normalizedText = text.toLowerCase()
+//   let matchCount = 0
+//   let totalScore = 0
 
-  for (const keyword of keywords) {
-    // Verificar correspondência exata da palavra
-    if (normalizedText.includes(keyword)) {
-      matchCount++
-      totalScore += 1.0 // Pontuação máxima para correspondência exata
-    } else {
-      // Verificar correspondência parcial (pelo menos 3 caracteres)
-      if (keyword.length >= 3) {
-        // Verificar se pelo menos 3 caracteres consecutivos do keyword estão no texto
-        for (let i = 0; i <= keyword.length - 3; i++) {
-          const subKeyword = keyword.substring(i, i + 3)
-          if (normalizedText.includes(subKeyword)) {
-            matchCount++
-            // Pontuação parcial baseada no tamanho da correspondência
-            totalScore += 0.5 * (subKeyword.length / keyword.length)
-            break
-          }
-        }
-      }
-    }
-  }
+//   for (const keyword of keywords) {
+//     // Verificar correspondência exata da palavra
+//     if (normalizedText.includes(keyword)) {
+//       matchCount++
+//       totalScore += 1.0 // Pontuação máxima para correspondência exata
+//     } else {
+//       // Verificar correspondência parcial (pelo menos 3 caracteres)
+//       if (keyword.length >= 3) {
+//         // Verificar se pelo menos 3 caracteres consecutivos do keyword estão no texto
+//         for (let i = 0; i <= keyword.length - 3; i++) {
+//           const subKeyword = keyword.substring(i, i + 3)
+//           if (normalizedText.includes(subKeyword)) {
+//             matchCount++
+//             // Pontuação parcial baseada no tamanho da correspondência
+//             totalScore += 0.5 * (subKeyword.length / keyword.length)
+//             break
+//           }
+//         }
+//       }
+//     }
+//   }
 
-  // Calcular pontuação final
-  // Fator 1: Proporção de palavras-chave encontradas
-  const keywordCoverageScore = matchCount / keywords.length
+//   // Calcular pontuação final
+//   // Fator 1: Proporção de palavras-chave encontradas
+//   const keywordCoverageScore = matchCount / keywords.length
 
-  // Fator 2: Pontuação média das correspondências
-  const matchQualityScore = matchCount > 0 ? totalScore / matchCount : 0
+//   // Fator 2: Pontuação média das correspondências
+//   const matchQualityScore = matchCount > 0 ? totalScore / matchCount : 0
 
-  // Fator 3: Bônus para correspondências de múltiplas palavras
-  const multiWordBonus = matchCount > 1 ? 0.2 : 0
+//   // Fator 3: Bônus para correspondências de múltiplas palavras
+//   const multiWordBonus = matchCount > 1 ? 0.2 : 0
 
-  // Combinar os fatores (com pesos)
-  return Math.min(1, keywordCoverageScore * 0.5 + matchQualityScore * 0.3 + multiWordBonus)
-}
+//   // Combinar os fatores (com pesos)
+//   return Math.min(1, keywordCoverageScore * 0.5 + matchQualityScore * 0.3 + multiWordBonus)
+// }
 
 // Verificar se existem dados IPTV
 export const hasIPTVData = async (): Promise<boolean> => {
@@ -589,4 +594,16 @@ export const hasIPTVData = async (): Promise<boolean> => {
     return false
   }
 }
+
+// function buscarPorRegex(text: string, searchTerm: string): boolean {
+//     try {
+//         // Criar a regex com a flag 'i' para case-insensitive
+//         const regex = new RegExp(searchTerm, 'i');
+//         return regex.test(text);
+//     } catch (error) {
+//         // Em caso de erro na regex (ex: caracteres inválidos), retornar falso
+//         console.error("Erro na regex:", error);
+//         return false;
+//     }
+// }
 

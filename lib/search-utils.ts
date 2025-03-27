@@ -108,11 +108,37 @@ export function calculateRelevanceScore(text: string, keywords: string[]): numbe
   return Math.min(1, keywordCoverageScore * 0.5 + matchQualityScore * 0.3 + multiWordBonus)
 }
 
-/**
- * Verifica se um texto corresponde a um termo de busca usando algoritmo avançado
- * Retorna true se a correspondência for suficientemente relevante
- */
+// Adicionar a nova função de busca por regex
+export function buscarPorRegex(texto: string, busca: string): boolean {
+  // Limpar a busca e o texto para remover caracteres especiais
+  const textoNormalizado = normalizeString(texto)
+  const buscaNormalizada = normalizeString(busca)
+
+  const regexPadrao = buscaNormalizada
+    .split(/\s+/) // Divide a busca em palavras (considerando múltiplos espaços)
+    .filter((palavra) => palavra.length > 1) // Filtra palavras muito curtas
+    .map((palavra) => `\\b${palavra}\\b`) // Adiciona bordas de palavra
+    .join(".*") // Permite qualquer coisa entre as palavras (.*)
+
+  if (regexPadrao === "") return false
+
+  try {
+    const regex = new RegExp(regexPadrao, "i") // 'i' para ignorar maiúsculas/minúsculas
+    return regex.test(textoNormalizado) // Testa se o padrão corresponde ao texto
+  } catch (error) {
+    console.error("Erro ao criar regex:", error)
+    return false
+  }
+}
+
+// Modificar a função isRelevantMatch para usar a nova busca por regex
 export function isRelevantMatch(text: string, searchTerm: string, threshold = 0.3): boolean {
+  // Primeiro tentar com regex para casos como "homem aranha" vs "homem-aranha"
+  if (buscarPorRegex(text, searchTerm)) {
+    return true
+  }
+
+  // Se não encontrar com regex, usar o método original baseado em pontuação
   const keywords = extractKeywords(searchTerm)
   if (keywords.length === 0) return false
 

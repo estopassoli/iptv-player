@@ -42,6 +42,7 @@ export function Upload() {
       )
 
       // Armazenar o conteúdo processado no IndexedDB
+
       await storeIPTVData(parsedContent)
       setProgress(100)
 
@@ -51,6 +52,7 @@ export function Upload() {
       })
 
       // Forçar um reload da página para mostrar o conteúdo
+
       setTimeout(() => {
         window.location.reload()
       }, 1000)
@@ -126,7 +128,7 @@ export function Upload() {
               <TabsTrigger value="url">URL</TabsTrigger>
             </TabsList>
             <TabsContent value="file" className="mt-4">
-              <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg">
+              <div className="flex flex-col items-center justify-center p-6 border border-dashed rounded-lg">
                 <UploadIcon className="w-10 h-10 mb-4 text-muted-foreground" />
                 <p className="mb-2 text-sm text-muted-foreground">
                   Arraste e solte seu arquivo .m3u aqui ou clique para selecionar

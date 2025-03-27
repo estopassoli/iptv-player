@@ -55,17 +55,24 @@ export default function Home() {
         <div className="border-dashed w-full flex">
           <div className="container mx-auto">
             <div className="flex flex-col border-dashed border-l border-r p-2 py-4 text-sm mx-auto">
-              <h1>
-                Built by{" "}
+              <div className="flex items-center gap-1">
+                <p>
+                  Built by
+                </p>
                 <a className="underline font-semibold" href="https://github.com/estopassoli">
                   estopassoli
                 </a>
-                . The source code is available on{" "}
+                <p>
+                  with
+                </p>
+                <a className="underline font-semibold" href="https://v0.dev">
+                  v0.dev.
+                </a>
+                <p>The source code is available on</p>
                 <a className="underline font-semibold" href="https://github.com/estopassoli/iptv-player">
                   GitHub
                 </a>
-                .
-              </h1>
+              </div>
             </div>
           </div>
         </div>

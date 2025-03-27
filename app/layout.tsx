@@ -15,15 +15,15 @@ export const metadata = {
   openGraph: {
     title: "M3U IPTV Player - O Melhor Player IPTV Online",
     description: "Assista TV ao vivo online com o melhor player IPTV compatível com listas M3U.",
-    url: "https://iptv-player-chi.vercel.app",
+    url: "https://iptv-player-ten.vercel.app/",
     type: "website",
-    image: "https://iptv-player-chi.vercel.app/logo.png",
+    image: "https://iptv-player-ten.vercel.app/logo.png",
   },
   twitter: {
     card: "summary_large_image",
     title: "M3U IPTV Player - Assista TV Online Gratuitamente",
     description: "Player IPTV compatível com listas M3U para assistir TV ao vivo online.",
-    image: "https://iptv-player-chi.vercel.app/logo.png",
+    image: "https://iptv-player-ten.vercel.app/logo.png",
   },
   themeColor: "#000000",
   icons: {
@@ -31,7 +31,7 @@ export const metadata = {
     apple: "/icons/icon-512x512.png",
   },
   manifest: "/manifest.json",
-    generator: 'v0.dev'
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -63,6 +63,7 @@ export default function RootLayout({
           disableTransitionOnChange
           storageKey="iptv-theme"
         >
+          <Toaster />
           {children}
         </ThemeProvider>
       </body>
@@ -72,4 +73,6 @@ export default function RootLayout({
 
 
 
+import { Toaster } from "@/components/ui/toaster"
 import './globals.css'
+

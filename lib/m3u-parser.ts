@@ -101,7 +101,7 @@ export function parseM3U(content: string): IPTVData {
         id: `channel-${index}`,
         name: item.name || `Canal ${index + 1}`,
         url: cleanedUrl,
-        logo: item.tvg?.logo || undefined,
+        logo: '/placeholder.svg',
         group: group,
         epg: item.tvg?.id || undefined,
       }

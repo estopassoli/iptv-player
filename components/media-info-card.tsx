@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
-import { Star, Calendar, Clock } from "lucide-react"
 import { getTMDBImageUrl, ImageSize } from "@/lib/tmdb-service"
+import { Calendar, Clock, Star } from "lucide-react"
+import Image from "next/image"
+import { useEffect, useState } from "react"
 
 interface MediaInfoCardProps {
   title: string
@@ -109,14 +110,15 @@ export function MediaInfoCard({ title, type = "auto", season, episode, className
       <CardContent className="p-0">
         <div className="flex flex-col md:flex-row">
           {/* Poster/Imagem */}
-          <div className="md:w-1/3 lg:w-1/4">
-            <img
+          <div className="md:w-1/3 lg:w-1/4 relative">
+            <Image
               src={getTMDBImageUrl(
                 isMovie ? data.poster_path : episodeData?.still_path || data.poster_path,
                 isMovie ? ImageSize.poster.medium : episodeData ? ImageSize.backdrop.medium : ImageSize.poster.medium,
               )}
+              fill
               alt={isMovie ? data.title : episodeData?.name || data.name}
-              className="w-full h-auto object-cover"
+              className="object-cover"
             />
           </div>
 
@@ -166,7 +168,7 @@ export function MediaInfoCard({ title, type = "auto", season, episode, className
             )}
 
             {/* Sinopse */}
-            <p className="text-sm text-muted-foreground line-clamp-4">
+            <p className="text-sm text-muted-foreground line-clamp-4 text-wrap">
               {isMovie ? data.overview : episodeData?.overview || data.overview || "Sem sinopse disponível."}
             </p>
           </div>

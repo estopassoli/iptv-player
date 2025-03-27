@@ -1,33 +1,35 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import {
-  Tv,
-  PlayCircle,
-  Folder,
-  Search,
-  Loader2,
-  RefreshCw,
-  X,
-  Globe,
-  MessageSquare,
-  Film,
-  ListVideo,
-} from "lucide-react"
-import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { SeriesPlayer } from "@/components/series-player"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VideoPlayer } from "@/components/video-player"
-import { SeriesPlayer } from "@/components/series-player"
 import { useMobile } from "@/hooks/use-mobile"
-import { getAllCategories, getChannelsPaginated, searchChannelsPaginated, hasIPTVData } from "@/lib/idb-storage"
+import { getAllCategories, getChannelsPaginated, hasIPTVData, searchChannelsPaginated } from "@/lib/idb-storage"
+import { type SeriesInfo, getFirstEpisode, groupChannelsIntoSeries } from "@/lib/series-manager"
 import { getThumbnail } from "@/lib/thumbnail-manager"
 import type { Channel } from "@/types/iptv"
-import { type SeriesInfo, groupChannelsIntoSeries, getFirstEpisode } from "@/lib/series-manager"
+import { AnimatePresence, motion } from "framer-motion"
+import {
+  Film,
+  FilterIcon,
+  Folder,
+  Globe,
+  ListVideo,
+  Loader2,
+  MessageSquare,
+  PlayCircle,
+  RefreshCw,
+  Search,
+  Tv,
+  X,
+} from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
 type AudioType = "all" | "dubbed" | "subbed"
 
@@ -222,6 +224,17 @@ export function IPTVContent() {
         // Agrupar canais em séries
         const { series, standaloneChannels } = groupChannelsIntoSeries(filteredByAudio)
 
+        // Log para debug
+        console.log(
+          "Séries encontradas:",
+          series.map((s) => ({
+            nome: s.name,
+            temporadas: Object.keys(s.seasons)
+              .map(Number)
+              .sort((a, b) => a - b),
+          })),
+        )
+
         // Filtrar por tipo de visualização (séries/filmes)
         let displayedItems: Channel[] = []
 
@@ -395,7 +408,6 @@ export function IPTVContent() {
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                type="search"
                 placeholder="Buscar canais..."
                 className="pl-10 pr-10"
                 value={searchTerm}
@@ -445,42 +457,7 @@ export function IPTVContent() {
             </div>
 
             {/* Filtro de tipo de conteúdo */}
-            <div className="mt-4 bg-card rounded-lg border shadow-sm">
-              <div className="p-3 font-medium border-b">
-                <span>Tipo de Conteúdo</span>
-              </div>
-              <div className="p-2">
-                <div className="flex flex-col space-y-1">
-                  <Button
-                    variant={viewMode === "all" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("all")}
-                    className="justify-start"
-                  >
-                    <Tv className="mr-2 h-4 w-4" />
-                    Todos
-                  </Button>
-                  <Button
-                    variant={viewMode === "series" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("series")}
-                    className="justify-start"
-                  >
-                    <ListVideo className="mr-2 h-4 w-4" />
-                    Séries
-                  </Button>
-                  <Button
-                    variant={viewMode === "movies" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("movies")}
-                    className="justify-start"
-                  >
-                    <Film className="mr-2 h-4 w-4" />
-                    Filmes
-                  </Button>
-                </div>
-              </div>
-            </div>
+
           </div>
 
           {/* Área de conteúdo principal */}
@@ -499,6 +476,49 @@ export function IPTVContent() {
                   {isSearching ? "Buscando..." : "Carregando..."}
                 </div>
               )}
+              <DropdownMenu>
+                <DropdownMenuTrigger>
+                  <Button variant='secondary' size='icon'>
+                    <FilterIcon />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="left">
+                  <div className="p-3 font-medium border-b">
+                    <span>Tipo de Conteúdo</span>
+                  </div>
+                  <div className="p-2">
+                    <div className="flex flex-col space-y-1">
+                      <Button
+                        variant={viewMode === "all" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("all")}
+                        className="justify-start"
+                      >
+                        <Tv className="mr-2 h-4 w-4" />
+                        Todos
+                      </Button>
+                      <Button
+                        variant={viewMode === "series" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("series")}
+                        className="justify-start"
+                      >
+                        <ListVideo className="mr-2 h-4 w-4" />
+                        Séries
+                      </Button>
+                      <Button
+                        variant={viewMode === "movies" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("movies")}
+                        className="justify-start"
+                      >
+                        <Film className="mr-2 h-4 w-4" />
+                        Filmes
+                      </Button>
+                    </div>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* Tabs para Dublado/Legendado */}
@@ -560,16 +580,16 @@ export function IPTVContent() {
                                   />
                                 ) : item.logo ? (
                                   <img
-                                    src={item.logo || "/placeholder.svg"}
+                                    src={"/placeholder.svg"}
                                     alt={item.name}
                                     className="w-full h-full object-cover"
                                     onError={(e) => {
                                       // Tentar buscar do TMDB quando a imagem falhar
                                       fetchTMDBThumbnail(item).then((url) => {
                                         if (url) {
-                                          ;(e.target as HTMLImageElement).src = url
+                                          ; (e.target as HTMLImageElement).src = url
                                         } else {
-                                          ;(e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
+                                          ; (e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
                                         }
                                       })
                                     }}

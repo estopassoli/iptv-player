@@ -68,6 +68,13 @@ export const saveThumbnail = async (itemId: string, thumbnailData: string): Prom
 export const getThumbnail = async (itemId: string): Promise<string | null> => {
   try {
     const db = await initThumbnailDB()
+
+    // Verificar se o object store existe
+    if (!db.objectStoreNames.contains(THUMBNAIL_STORE)) {
+      console.warn("Object store 'thumbnails' não encontrado")
+      return null
+    }
+
     const transaction = db.transaction([THUMBNAIL_STORE], "readonly")
     const store = transaction.objectStore(THUMBNAIL_STORE)
 
