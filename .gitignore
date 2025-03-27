@@ -10,10 +10,6 @@
 # production
 /build
 
-
-sw.js
-workbox-*.js
-
 # debug
 npm-debug.log*
 yarn-debug.log*

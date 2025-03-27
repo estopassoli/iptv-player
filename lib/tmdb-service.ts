@@ -312,7 +312,7 @@ export async function getEpisodeDetails(
     )
 
     if (!response.ok) {
-      throw new Error(`Erro ao obter detalhes do episódio: ${response.statusText}`)
+      return null
     }
 
     const data = await response.json()
@@ -322,7 +322,6 @@ export async function getEpisodeDetails(
 
     return data
   } catch (error) {
-    console.error("Erro ao obter detalhes do episódio:", error)
     return null
   }
 }

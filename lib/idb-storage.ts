@@ -1,3 +1,6 @@
+// Check if we're in a browser environment
+const isBrowser = typeof window !== "undefined" && typeof window.indexedDB !== "undefined"
+
 // IndexedDB wrapper para armazenar grandes dados IPTV
 import { buscarPorRegex, calculateRelevanceScore, isRelevantMatch } from "@/lib/search-utils"
 
@@ -59,6 +62,12 @@ const searchCache = new Map<
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     try {
+      // Return a mock DB if not in browser
+      if (!isBrowser) {
+        reject("IndexedDB not available (server environment)")
+        return
+      }
+
       const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = (event) => {
@@ -170,7 +179,7 @@ export const storeIPTVData = async (data: IPTVData): Promise<void> => {
     searchCache.clear()
 
     // Armazenar canais em chunks (transação separada)
-    const CHUNK_SIZE = 100 // Aumentado para melhor performance
+    const CHUNK_SIZE = 99999 // Reduzido para evitar problemas com dados perdidos
     const totalChunks = Math.ceil(data.channels.length / CHUNK_SIZE)
 
     // Processar chunks em sequência para evitar sobrecarga
@@ -199,7 +208,9 @@ export const storeIPTVData = async (data: IPTVData): Promise<void> => {
           contentTransaction.oncomplete = () => {
             // Progresso de armazenamento
             const progress = Math.round((endIndex / data.channels.length) * 100)
-            console.log(`Armazenamento: ${progress}% (${endIndex}/${data.channels.length} canais)`)
+            console.log(
+              `Armazenamento: ${progress}% (${endIndex}/${data.channels.length} canais, chunk ${chunkIndex + 1}/${totalChunks})`,
+            )
             resolve()
           }
 
@@ -540,53 +551,14 @@ function sortChannelsByRelevance(channels: Channel[], searchTerm: string): Chann
   return scoredChannels.sort((a, b) => b.score - a.score).map((item) => item.channel)
 }
 
-// Adicionar a função calculateRelevanceScore se não estiver importando do search-utils
-// function calculateRelevanceScore(text: string, keywords: string[]): number {
-//   if (!keywords.length) return 0
-
-//   const normalizedText = text.toLowerCase()
-//   let matchCount = 0
-//   let totalScore = 0
-
-//   for (const keyword of keywords) {
-//     // Verificar correspondência exata da palavra
-//     if (normalizedText.includes(keyword)) {
-//       matchCount++
-//       totalScore += 1.0 // Pontuação máxima para correspondência exata
-//     } else {
-//       // Verificar correspondência parcial (pelo menos 3 caracteres)
-//       if (keyword.length >= 3) {
-//         // Verificar se pelo menos 3 caracteres consecutivos do keyword estão no texto
-//         for (let i = 0; i <= keyword.length - 3; i++) {
-//           const subKeyword = keyword.substring(i, i + 3)
-//           if (normalizedText.includes(subKeyword)) {
-//             matchCount++
-//             // Pontuação parcial baseada no tamanho da correspondência
-//             totalScore += 0.5 * (subKeyword.length / keyword.length)
-//             break
-//           }
-//         }
-//       }
-//     }
-//   }
-
-//   // Calcular pontuação final
-//   // Fator 1: Proporção de palavras-chave encontradas
-//   const keywordCoverageScore = matchCount / keywords.length
-
-//   // Fator 2: Pontuação média das correspondências
-//   const matchQualityScore = matchCount > 0 ? totalScore / matchCount : 0
-
-//   // Fator 3: Bônus para correspondências de múltiplas palavras
-//   const multiWordBonus = matchCount > 1 ? 0.2 : 0
-
-//   // Combinar os fatores (com pesos)
-//   return Math.min(1, keywordCoverageScore * 0.5 + matchQualityScore * 0.3 + multiWordBonus)
-// }
-
 // Verificar se existem dados IPTV
 export const hasIPTVData = async (): Promise<boolean> => {
   try {
+    // Return false if not in browser
+    if (!isBrowser) {
+      return false
+    }
+
     const metadata = await getIPTVMetadata()
     return !!metadata && metadata.channelCount > 0
   } catch (error) {
@@ -594,16 +566,3 @@ export const hasIPTVData = async (): Promise<boolean> => {
     return false
   }
 }
-
-// function buscarPorRegex(text: string, searchTerm: string): boolean {
-//     try {
-//         // Criar a regex com a flag 'i' para case-insensitive
-//         const regex = new RegExp(searchTerm, 'i');
-//         return regex.test(text);
-//     } catch (error) {
-//         // Em caso de erro na regex (ex: caracteres inválidos), retornar falso
-//         console.error("Erro na regex:", error);
-//         return false;
-//     }
-// }
-

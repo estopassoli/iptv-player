@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useMobile } from "@/hooks/use-mobile"
 import { type SeriesEpisode, type SeriesInfo, getAllEpisodes } from "@/lib/series-manager"
@@ -25,7 +26,7 @@ import {
   RefreshCw,
   Tv,
   Volume2,
-  VolumeX,
+  VibrateOffIcon as VolumeOff,
   X,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
@@ -39,7 +40,7 @@ interface SeriesPlayerProps {
 }
 
 // Certifique-se de que todas as temporadas sejam exibidas e que o accordion esteja aberto por padrão
-export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose: () => void }) {
+export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
   const [selectedEpisode, setSelectedEpisode] = useState<SeriesEpisode | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -52,6 +53,7 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
   const [defaultOpenValues, setDefaultOpenValues] = useState<string[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
+  const progressBarRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isMobile = useMobile()
   const [isLoading, setIsLoading] = useState(true)
@@ -70,10 +72,15 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [bufferProgress, setBufferProgress] = useState(0)
-  const [seekInProgress, setSeekInProgress] = useState(false)
-  const [isBuffering, setIsBuffering] = useState(false)
-  const [seekTime, setSeekTime] = useState<number | null>(null)
-  const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [hoverTime, setHoverTime] = useState<number | null>(null)
+  const [hoverPosition, setHoverPosition] = useState<number | null>(null)
+
+  // Função para formatar o tempo em minutos e segundos
+  const formatTime = (timeInSeconds: number): string => {
+    const minutes = Math.floor(timeInSeconds / 60)
+    const seconds = Math.floor(timeInSeconds % 60)
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+  }
 
   // Definir todas as temporadas como abertas por padrão
   useEffect(() => {
@@ -133,58 +140,53 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
   // Função para atualizar o progresso do vídeo
   const updateProgress = () => {
     if (videoRef.current) {
-      const currentProgress = (videoRef.current.currentTime / videoRef.current.duration) * 100
-      setProgress(currentProgress)
+      setProgress(videoRef.current.currentTime)
     }
   }
 
-  // Função para definir o tempo do vídeo ao clicar na barra de progresso
-  const setVideoTime = (e: React.MouseEvent<HTMLDivElement>) => {
-    const progressBar = e.currentTarget
-    const clickPosition = e.nativeEvent.offsetX
-    const progressBarWidth = progressBar.clientWidth
-    const seekPercentage = clickPosition / progressBarWidth
+  // Função para definir o tempo do vídeo
+  const setVideoTime = (value: number[]) => {
+    if (!videoRef.current || value.length === 0) return
 
-    if (videoRef.current && !seekInProgress && videoRef.current.readyState >= 1) {
-      try {
-        setSeekInProgress(true)
-        setIsBuffering(true)
-
-        // Calcular o tempo baseado na porcentagem
-        const newTime = seekPercentage * videoRef.current.duration
-
-        // Garantir que o tempo não exceda a duração do vídeo
-        const safeTime = Math.min(newTime, videoRef.current.duration - 0.1)
-
-        // Mostrar o tempo de seek no UI
-        setSeekTime(safeTime)
-
-        // Limpar qualquer timeout anterior
-        if (seekTimeoutRef.current) {
-          clearTimeout(seekTimeoutRef.current)
+    try {
+      // Verificar se o vídeo está pronto para buscar
+      if (videoRef.current.readyState >= 1) {
+        const newTime = Math.min(value[0], videoRef.current.duration - 0.1)
+        videoRef.current.currentTime = newTime
+      } else {
+        // Se o vídeo não estiver pronto, definir um listener para quando estiver
+        const setTimeWhenReady = () => {
+          if (videoRef.current) {
+            const newTime = Math.min(value[0], videoRef.current.duration - 0.1)
+            videoRef.current.currentTime = newTime
+            videoRef.current.removeEventListener("loadedmetadata", setTimeWhenReady)
+          }
         }
-
-        // Definir um timeout para limpar o tempo de seek após 2 segundos
-        seekTimeoutRef.current = setTimeout(() => {
-          setSeekTime(null)
-          seekTimeoutRef.current = null
-        }, 2000)
-
-        // Aplicar o seek
-        videoRef.current.currentTime = safeTime
-      } catch (err) {
-        console.error("Erro ao definir tempo do vídeo:", err)
-        // Ignorar erros de decode que não interrompem a reprodução
-        if (err instanceof DOMException && err.name === "NotSupportedError") {
-          console.warn("Erro de decode ignorado durante seek")
-        }
-      } finally {
-        // Resetar o estado de seek após um pequeno delay
-        setTimeout(() => {
-          setSeekInProgress(false)
-        }, 500)
+        videoRef.current.addEventListener("loadedmetadata", setTimeWhenReady)
       }
+    } catch (err) {
+      console.warn("Erro ao definir o tempo do vídeo:", err)
+      // Não mostrar erro na interface para não interromper a experiência
     }
+  }
+
+  // Função para lidar com o hover na barra de progresso
+  const handleProgressHover = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || !videoRef.current) return
+
+    const rect = progressBarRef.current.getBoundingClientRect()
+    const position = e.clientX - rect.left
+    const percentage = position / rect.width
+    const timeAtPosition = percentage * videoRef.current.duration
+
+    setHoverTime(timeAtPosition)
+    setHoverPosition(position)
+  }
+
+  // Função para limpar o hover
+  const handleProgressLeave = () => {
+    setHoverTime(null)
+    setHoverPosition(null)
   }
 
   // Função para alternar tela cheia
@@ -241,10 +243,10 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
   }
 
   // Função para ajustar volume
-  const adjustVolume = (value: number) => {
-    if (!videoRef.current) return
+  const adjustVolume = (value: number[]) => {
+    if (!videoRef.current || value.length === 0) return
 
-    const newVolume = Math.max(0, Math.min(1, value))
+    const newVolume = value[0]
     videoRef.current.volume = newVolume
     setVolume(newVolume)
 
@@ -331,9 +333,6 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
 
     const video = videoRef.current
 
-    // Configurar preload para melhorar a experiência de seek
-    video.preload = "auto"
-
     // Adicionar event listeners para monitorar o estado do vídeo
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => setIsPlaying(false)
@@ -345,11 +344,11 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       const errorCode = target.error?.code
       const errorMessage = target.error?.message || ""
 
-      // Se não houver código de erro ou mensagem, usar uma mensagem genérica
-      if (!errorCode && !errorMessage) {
-        setError("Erro desconhecido ao reproduzir o vídeo. Tente novamente ou use o proxy.")
-        setIsLoading(false)
-        return
+      // Ignorar erros de busca (seek) que não afetam a reprodução
+      if (errorCode === 3 && videoRef.current && !videoRef.current.paused) {
+        // MediaError.MEDIA_ERR_DECODE = 3
+        console.warn("Erro de decodificação durante a reprodução, tentando continuar...")
+        return // Não mostrar erro ao usuário se o vídeo continua reproduzindo
       }
 
       if (
@@ -365,28 +364,32 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
 
       setIsLoading(false)
     }
-
-    const handleWaiting = () => {
-      setIsLoading(true)
-      setIsBuffering(true)
-    }
-
-    const handlePlaying = () => {
-      setIsLoading(false)
-      setIsBuffering(false)
-    }
-
+    const handleWaiting = () => setIsLoading(true)
+    const handlePlaying = () => setIsLoading(false)
     const handleCanPlay = () => {
       setIsLoading(false)
       setDuration(video.duration)
+
+      // Remove auto fullscreen and autoplay
+      // video.play().catch((err) => {
+      //   console.warn("Reprodução automática bloqueada:", err);
+      //   setIsPlaying(false);
+      // });
+
+      // if (playerRef.current && !isFullscreen) {
+      //   try {
+      //     playerRef.current.requestFullscreen().catch((err) => {
+      //       console.warn("Tela cheia automática bloqueada:", err);
+      //     });
+      //     setIsFullscreen(true);
+      //   } catch (err) {
+      //     console.warn("Erro ao tentar entrar em tela cheia:", err);
+      //   }
+      // }
     }
 
     const handleTimeUpdate = () => {
       updateProgress()
-      // Se estiver em buffering e o vídeo está reproduzindo, desativar o buffering
-      if (isBuffering && !video.paused && !video.seeking) {
-        setIsBuffering(false)
-      }
     }
 
     const handleVolumeChange = () => {
@@ -404,7 +407,7 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       }
     }
 
-    const handleVideoProgress = () => {
+    const handleProgress = () => {
       if (videoRef.current) {
         const buffered = videoRef.current.buffered
         if (buffered.length > 0) {
@@ -416,12 +419,8 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       }
     }
 
-    const handleSeeking = () => {
-      setIsBuffering(true)
-    }
-
-    const handleSeeked = () => {
-      setIsBuffering(false)
+    const handleLoadedMetadata = () => {
+      setDuration(video.duration)
     }
 
     video.addEventListener("play", handlePlay)
@@ -432,10 +431,9 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
     video.addEventListener("canplay", handleCanPlay)
     video.addEventListener("timeupdate", handleTimeUpdate)
     video.addEventListener("volumechange", handleVolumeChange)
-    video.addEventListener("progress", handleVideoProgress)
-    video.addEventListener("seeking", handleSeeking)
-    video.addEventListener("seeked", handleSeeked)
+    video.addEventListener("loadedmetadata", handleLoadedMetadata)
     document.addEventListener("fullscreenchange", handleFullscreenChange)
+    video.addEventListener("progress", handleProgress)
 
     // Limpar event listeners
     return () => {
@@ -447,21 +445,16 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       video.removeEventListener("canplay", handleCanPlay)
       video.removeEventListener("timeupdate", handleTimeUpdate)
       video.removeEventListener("volumechange", handleVolumeChange)
-      video.removeEventListener("progress", handleVideoProgress)
-      video.removeEventListener("seeking", handleSeeking)
-      video.removeEventListener("seeked", handleSeeked)
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata)
       document.removeEventListener("fullscreenchange", handleFullscreenChange)
+      video.removeEventListener("progress", handleProgress)
 
       // Limpar timeout ao desmontar
       if (hideControlsTimeout) {
         clearTimeout(hideControlsTimeout)
       }
-
-      if (seekTimeoutRef.current) {
-        clearTimeout(seekTimeoutRef.current)
-      }
     }
-  }, [videoUrl, hideControlsTimeout, isFullscreen, isBuffering])
+  }, [videoUrl, hideControlsTimeout, isFullscreen, isMuted])
 
   // Adicionar event listeners para mostrar/esconder controles ao mover o mouse
   useEffect(() => {
@@ -492,26 +485,34 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
     }
   }, [hideControlsTimeout])
 
+  // Update the togglePlay function to properly handle play/pause promises
   const togglePlay = () => {
     if (!videoRef.current) return
 
     if (videoRef.current.paused) {
-      try {
-        videoRef.current.play().catch((err) => {
-          console.error("Erro ao reproduzir:", err)
-          // Verificar se o erro tem uma mensagem antes de exibi-lo
-          if (err && err.message) {
-            setError(`Não foi possível reproduzir este conteúdo: ${err.message}`)
-          } else {
-            setError("Não foi possível reproduzir este conteúdo. Tente novamente ou use o proxy.")
-          }
-        })
-      } catch (err) {
-        console.error("Exceção ao tentar reproduzir:", err)
-        setError("Erro ao tentar reproduzir o vídeo. Tente novamente.")
+      // Store the play promise to handle it properly
+      const playPromise = videoRef.current.play()
+
+      // Only if the browser returns a promise (modern browsers do)
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            // Playback started successfully
+          })
+          .catch((error) => {
+            // Auto-play was prevented or another error occurred
+            console.error("Erro ao reproduzir:", error)
+            if (error.name !== "AbortError") {
+              // Only show errors that aren't just play/pause race conditions
+              setError("Não foi possível reproduzir este conteúdo.")
+            }
+          })
       }
     } else {
-      videoRef.current.pause()
+      // Make sure we don't call pause() while a play() is still pending
+      setTimeout(() => {
+        videoRef.current?.pause()
+      }, 0)
     }
   }
 
@@ -521,7 +522,10 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
 
     // Pausar o vídeo atual
     if (videoRef.current && !videoRef.current.paused) {
-      videoRef.current.pause()
+      // Use setTimeout to avoid race conditions with play/pause
+      setTimeout(() => {
+        videoRef.current?.pause()
+      }, 0)
     }
 
     setCurrentEpisode(episode)
@@ -563,7 +567,17 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
 
       // Pausar o vídeo se estiver reproduzindo
       const wasPlaying = !video.paused
-      if (wasPlaying) video.pause()
+      if (wasPlaying) {
+        // Use setTimeout to avoid race conditions with play/pause
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            if (videoRef.current) {
+              videoRef.current.pause()
+            }
+            resolve()
+          }, 0)
+        })
+      }
 
       // Avançar para 15 minutos (ou 10% da duração se for menor que 15 minutos)
       const targetTime = Math.min(15 * 60, video.duration * 0.1)
@@ -593,10 +607,14 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       await saveThumbnail(currentEpisode.id, thumbnailData)
 
       // Retornar ao estado anterior
-      if (wasPlaying) video.play()
-
-      setThumbnailCaptured(true)
-      setTimeout(() => setThumbnailCaptured(false), 3000) // Mostrar confirmação por 3 segundos
+      if (wasPlaying) {
+        const playPromise = video.play()
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn("Não foi possível retomar a reprodução após captura:", err)
+          })
+        }
+      }
     } catch (error) {
       console.error("Erro ao capturar thumbnail:", error)
     } finally {
@@ -607,7 +625,12 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
   // Filtrar episódios por tipo de áudio (dublado/legendado)
   const filteredEpisodes = allEpisodes.filter((episode) => {
     if (audioType === "all") return true
+
+    // Check if the episode is subtitled by looking for [L] tag
     const isSubbed = episode.name.includes("[L]")
+
+    // For "subbed" type, return episodes with [L] tag
+    // For "dubbed" type, return episodes without [L] tag
     return audioType === "subbed" ? isSubbed : !isSubbed
   })
 
@@ -618,7 +641,12 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       // Filtrar episódios desta temporada pelo tipo de áudio
       const filteredSeasonEpisodes = data.episodes.filter((episode) => {
         if (audioType === "all") return true
+
+        // Check if the episode is subtitled by looking for [L] tag
         const isSubbed = episode.name.includes("[L]")
+
+        // For "subbed" type, return episodes with [L] tag
+        // For "dubbed" type, return episodes with [L] tag
         return audioType === "subbed" ? isSubbed : !isSubbed
       })
 
@@ -629,21 +657,6 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
     })
     // Remover temporadas sem episódios após filtragem
     .filter((season) => season.episodes.length > 0)
-
-  // Formatar tempo em formato MM:SS ou HH:MM:SS
-  const formatTime = (timeInSeconds: number) => {
-    if (isNaN(timeInSeconds)) return "00:00"
-
-    const hours = Math.floor(timeInSeconds / 3600)
-    const minutes = Math.floor((timeInSeconds % 3600) / 60)
-    const seconds = Math.floor(timeInSeconds % 60)
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-    }
-
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
 
   // Renderizar tela de carregamento enquanto busca a URL
   if (fetchingUrl || isRetrying) {
@@ -674,7 +687,7 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
     >
       <Card className="w-full max-w-6xl relative truncate">
         {isFullscreen && (
@@ -693,7 +706,7 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
 
         <div className="flex flex-col lg:flex-row">
           {/* Player de vídeo */}
-          <div className="lg:w-2/3">
+          <div className="lg:w-2/3 w-full">
             <CardContent className="p-0 overflow-hidden" ref={playerRef}>
               <div className="aspect-video relative">
                 {error ? (
@@ -721,25 +734,19 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
                         ref={videoRef}
                         src={videoUrl}
                         className="w-full h-full"
-                        //poster={currentEpisode?.logo || series.thumbnail || "/placeholder.svg?height=720&width=1280"}
+                        poster={series.thumbnail}
                         crossOrigin="anonymous"
                         onClick={handleVideoClick}
-                        preload="auto"
+                        preload="metadata"
                       />
                     )}
 
                     {/* Canvas escondido para captura de thumbnail */}
                     <canvas ref={canvasRef} className="hidden" />
 
-                    {/* Indicador de buffering */}
-                    {isBuffering && (
+                    {isLoading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-50">
-                        <div className="flex flex-col items-center">
-                          <Loader2 className="h-12 w-12 animate-spin text-primary mb-2" />
-                          <p className="text-white text-sm bg-black/60 px-3 py-1 rounded-md">
-                            {seekTime !== null ? `Avançando para ${formatTime(seekTime)}...` : "Carregando..."}
-                          </p>
-                        </div>
+                        <Loader2 className="h-12 w-12 animate-spin text-primary" />
                       </div>
                     )}
 
@@ -874,52 +881,37 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
                       {/* Controles inferiores com gradiente melhorado */}
                       <div className="w-full bg-gradient-to-t from-black/90 via-black/60 to-transparent pb-4 pt-8 z-50">
                         <div className="px-4" onClick={(e) => e.stopPropagation()}>
-                          {/* Barra de progresso com tooltip de tempo */}
-                          <div className="relative mb-4">
-                            <div
-                              className="w-full h-1 bg-white/30 rounded-full cursor-pointer relative group"
-                              onClick={setVideoTime}
-                              onMouseMove={(e) => {
-                                const rect = e.currentTarget.getBoundingClientRect()
-                                const offsetX = e.clientX - rect.left
-                                const percentage = offsetX / rect.width
-                                const timeTooltip = document.getElementById("time-tooltip-series")
-                                if (timeTooltip && videoRef.current) {
-                                  const tooltipTime = percentage * videoRef.current.duration
-                                  timeTooltip.textContent = formatTime(tooltipTime)
-                                  timeTooltip.style.left = `${offsetX}px`
-                                  timeTooltip.style.opacity = "1"
-                                }
-                              }}
-                              onMouseLeave={() => {
-                                const timeTooltip = document.getElementById("time-tooltip-series")
-                                if (timeTooltip) {
-                                  timeTooltip.style.opacity = "0"
-                                }
-                              }}
-                            >
+                          {/* Barra de progresso com tooltip */}
+                          <div
+                            className="w-full mb-4 relative"
+                            ref={progressBarRef}
+                            onMouseMove={handleProgressHover}
+                            onMouseLeave={handleProgressLeave}
+                          >
+                            {/* Tooltip de tempo */}
+                            {hoverTime !== null && hoverPosition !== null && (
+                              <div
+                                className="absolute bottom-full mb-2 bg-black/80 text-white text-xs px-2 py-1 rounded transform -translate-x-1/2 pointer-events-none"
+                                style={{ left: `${hoverPosition}px` }}
+                              >
+                                {formatTime(hoverTime)}
+                              </div>
+                            )}
+
+                            {/* Slider para progresso */}
+                            <div className="relative">
                               {/* Indicador de buffer */}
                               <div
-                                className="absolute top-0 left-0 h-full bg-white/50 rounded-full"
+                                className="absolute top-1/2 left-0 h-1 -translate-y-1/2 bg-white/50 rounded-full z-10 pointer-events-none"
                                 style={{ width: `${bufferProgress}%` }}
                               />
-                              <div
-                                className="absolute top-0 left-0 h-full bg-primary rounded-full"
-                                style={{ width: `${progress}%` }}
+                              <Slider
+                                value={[videoRef.current?.currentTime || 0]}
+                                max={duration || 100}
+                                step={0.01}
+                                onValueChange={setVideoTime}
+                                className="z-20"
                               />
-                              <div
-                                className="absolute top-0 left-0 h-3 w-3 bg-primary rounded-full -mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                style={{ left: `${progress}%` }}
-                              />
-
-                              {/* Tooltip de tempo */}
-                              <div
-                                id="time-tooltip-series"
-                                className="absolute bottom-4 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 pointer-events-none transition-opacity"
-                                style={{ left: "0%" }}
-                              >
-                                00:00
-                              </div>
                             </div>
                           </div>
 
@@ -950,37 +942,26 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
                                   }}
                                 >
                                   {isMuted ? (
-                                    <VolumeX className="h-5 w-5 text-white/50" />
+                                    <VolumeOff className="h-5 w-5 text-white/50" />
                                   ) : (
                                     <Volume2 className="h-5 w-5" />
                                   )}
                                 </Button>
-                                <div
-                                  className="w-20 h-1 bg-white/30 rounded-full cursor-pointer hidden md:block relative group"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    const rect = e.currentTarget.getBoundingClientRect()
-                                    const x = e.clientX - rect.left
-                                    const newVolume = Math.max(0, Math.min(1, x / rect.width))
-                                    adjustVolume(newVolume)
-                                  }}
-                                >
-                                  <div
-                                    className="h-full bg-white rounded-full"
-                                    style={{ width: `${isMuted ? 0 : volume * 100}%` }}
-                                  />
-                                  <div
-                                    className="absolute top-1/2 -mt-1.5 -ml-1.5 h-3 w-3 rounded-full bg-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                    style={{ left: `${isMuted ? 0 : volume * 100}%` }}
-                                  />
-                                </div>
+                                <Slider
+                                  value={[isMuted ? 0 : volume]}
+                                  min={0}
+                                  max={1}
+                                  step={0.01}
+                                  onValueChange={adjustVolume}
+                                  className="w-20"
+                                />
                               </div>
 
                               {/* Tempo */}
                               <div className="text-white text-sm hidden md:block">
-                                {videoRef.current && duration
+                                {videoRef.current
                                   ? `${formatTime(videoRef.current.currentTime)} / ${formatTime(duration)}`
-                                  : "00:00 / 00:00"}
+                                  : "0:00 / 0:00"}
                               </div>
                             </div>
 
@@ -1049,8 +1030,8 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
           </div>
 
           {/* Lista de episódios */}
-          <div className="lg:w-1/3 border-t lg:border-t-0 lg:border-l">
-            <div className="p-4 border-b flex justify-between items-center">
+          <div className="lg:w-1/3 w-full border-t lg:border-t-0 lg:border-l">
+            <div className="p-2 sm:p-4 border-b flex justify-between items-center">
               <h3 className="font-medium">Episódios</h3>
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onClose}>
                 <X className="h-4 w-4" />
@@ -1058,26 +1039,26 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
             </div>
 
             <Tabs defaultValue="dubbed" value={audioType} onValueChange={(value) => setAudioType(value as AudioType)}>
-              <div className="px-4 pt-4">
+              <div className="px-2 sm:px-4 pt-2 sm:pt-4">
                 <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="all" className="flex items-center gap-2">
-                    <Tv className="h-4 w-4" />
+                  <TabsTrigger value="all" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+                    <Tv className="h-3 w-3 sm:h-4 sm:w-4" />
                     <span>Todos</span>
                   </TabsTrigger>
-                  <TabsTrigger value="dubbed" className="flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
+                  <TabsTrigger value="dubbed" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+                    <Globe className="h-3 w-3 sm:h-4 sm:w-4" />
                     <span>Dublado</span>
                   </TabsTrigger>
-                  <TabsTrigger value="subbed" className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
+                  <TabsTrigger value="subbed" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+                    <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4" />
                     <span>Legendado</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
 
               <TabsContent value={audioType}>
-                <ScrollArea className="h-[400px] lg:h-[600px]">
-                  <div className="p-4">
+                <ScrollArea className="h-[300px] sm:h-[400px] lg:h-[600px]">
+                  <div className="p-2 sm:p-4">
                     {seasonEpisodes.length > 0 ? (
                       <Accordion type="multiple" defaultValue={defaultOpenValues}>
                         {seasonEpisodes.map(({ season, episodes }) => (
@@ -1107,9 +1088,11 @@ export function SeriesPlayer({ series, onClose }: { series: SeriesInfo; onClose:
                                     }
                                   >
                                     <div className="mr-2 w-6 text-center text-sm">{episode.episode}</div>
-                                    <div className="flex-1 truncate">{episode.name.replace(/\[L\]/g, "").trim()}</div>
+                                    <div className="flex-1 truncate text-sm">
+                                      {episode.name.replace(/\[L\]/g, "").trim()}
+                                    </div>
                                     {episode.name.includes("[L]") && (
-                                      <Badge variant="outline" className="ml-2 text-xs">
+                                      <Badge variant="outline" className="ml-2 text-xs flex-shrink-0">
                                         LEG
                                       </Badge>
                                     )}

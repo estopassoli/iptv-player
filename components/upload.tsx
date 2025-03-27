@@ -3,182 +3,247 @@
 import type React from "react"
 
 import { Button } from "@/components/ui/button"
-import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
-import { storeIPTVData } from "@/lib/idb-storage"
 import { parseM3U } from "@/lib/m3u-parser"
-import { motion } from "framer-motion"
+import { hasIPTVData, storeIPTVData } from "@/lib/prisma-storage"
+import { initializeUser } from "@/lib/user-service"
 import { LinkIcon, Loader2, UploadIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export function Upload() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState("file")
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
   const [url, setUrl] = useState("")
-  const [progress, setProgress] = useState(0)
-  const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const [hasData, setHasData] = useState(false)
+
+  useEffect(() => {
+    const checkData = async () => {
+      try {
+        const hasExistingData = await hasIPTVData()
+        setHasData(hasExistingData)
+      } catch (error) {
+        console.error("Error checking for existing data:", error)
+      }
+    }
+
+    checkData()
+  }, [])
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
     if (!file) return
 
-    setIsLoading(true)
-    setProgress(0)
+    setIsUploading(true)
+    setUploadProgress(0)
+    setUploadError(null)
+    setUploadSuccess(false)
+
     try {
-      const content = await file.text()
-      console.log("Processando arquivo M3U...")
-      setProgress(30)
+      // Ensure user is initialized
+      await initializeUser()
 
-      // Processar o arquivo M3U usando a biblioteca iptv-playlist-parser
+      // Read the file
+      const content = await readFileAsText(file, (progress) => {
+        setUploadProgress(Math.round(progress * 50)) // First 50% is reading the file
+      })
+
+      // Parse the M3U content
       const parsedContent = parseM3U(content)
-      setProgress(60)
 
-      // Log de informações sobre o conteúdo processado
-      console.log(
-        `Processados ${parsedContent.channels.length} canais em ${parsedContent.categories.length} categorias`,
-      )
-
-      // Armazenar o conteúdo processado no IndexedDB
-
+      // Store the data
       await storeIPTVData(parsedContent)
-      setProgress(100)
 
-      toast({
-        title: "Arquivo processado com sucesso",
-        description: `${parsedContent.channels.length} canais encontrados em ${parsedContent.categories.length} categorias.`,
-      })
+      setUploadSuccess(true)
+      setUploadProgress(100)
 
-      // Forçar um reload da página para mostrar o conteúdo
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
 
-      setTimeout(() => {
-        window.location.reload()
-      }, 1000)
+      // Reload the page to show the new content
+      window.location.reload()
     } catch (error) {
-      console.error("Erro ao processar arquivo M3U:", error)
-      toast({
-        title: "Erro ao processar arquivo",
-        description: "Verifique se o formato do arquivo é válido.",
-        variant: "destructive",
-      })
-      setProgress(0)
+      console.error("Error uploading file:", error)
+      setUploadError("Failed to upload file. Please try again.")
     } finally {
-      setIsLoading(false)
+      setIsUploading(false)
     }
   }
 
-  const handleUrlSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!url) return
+  const handleUrlSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
 
-    setIsLoading(true)
-    setProgress(0)
+    if (!url.trim()) return
+
+    setIsUploading(true)
+    setUploadProgress(0)
+    setUploadError(null)
+    setUploadSuccess(false)
+
     try {
-      setProgress(10)
+      // Ensure user is initialized
+      await initializeUser()
+
+      // Fetch the M3U content from the API
       const response = await fetch(`/api/fetch-m3u?url=${encodeURIComponent(url)}`)
 
       if (!response.ok) {
-        throw new Error("Falha ao buscar conteúdo M3U")
+        throw new Error("Failed to fetch M3U content")
       }
 
-      setProgress(50)
       const data = await response.json()
 
-      // Armazenar o conteúdo processado no IndexedDB
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      // Store the data
       await storeIPTVData(data.content)
-      setProgress(100)
 
-      toast({
-        title: "Conteúdo carregado com sucesso",
-        description: `${data.content.channels.length} canais encontrados.`,
-      })
+      setUploadSuccess(true)
+      setUploadProgress(100)
+      setUrl("")
 
-      // Forçar um reload da página para mostrar o conteúdo
-      setTimeout(() => {
-        window.location.reload()
-      }, 1000)
+      // Reload the page to show the new content
+      window.location.reload()
     } catch (error) {
-      console.error("Erro ao carregar M3U da URL:", error)
-      toast({
-        title: "Erro ao carregar URL",
-        description: "Verifique se a URL é válida e acessível.",
-        variant: "destructive",
-      })
-      setProgress(0)
+      console.error("Error fetching M3U:", error)
+      setUploadError("Failed to fetch M3U content. Please check the URL and try again.")
     } finally {
-      setIsLoading(false)
+      setIsUploading(false)
     }
   }
 
+  // Helper function to read a file as text with progress
+  const readFileAsText = (file: File, onProgress: (progress: number) => void): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = event.loaded / event.total
+          onProgress(progress)
+        }
+      }
+
+      reader.onload = () => {
+        resolve(reader.result as string)
+      }
+
+      reader.onerror = () => {
+        reject(new Error("Failed to read file"))
+      }
+
+      reader.readAsText(file)
+    })
+  }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-      <div>
-        <CardHeader>
-          <CardTitle>Adicionar Conteúdo IPTV</CardTitle>
-          <CardDescription>
-            Faça upload de um arquivo .m3u ou insira uma URL remota para carregar seu conteúdo IPTV.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="file" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="file">Arquivo</TabsTrigger>
-              <TabsTrigger value="url">URL</TabsTrigger>
-            </TabsList>
-            <TabsContent value="file" className="mt-4">
-              <div className="flex flex-col items-center justify-center p-6 border border-dashed rounded-lg">
-                <UploadIcon className="w-10 h-10 mb-4 text-muted-foreground" />
-                <p className="mb-2 text-sm text-muted-foreground">
-                  Arraste e solte seu arquivo .m3u aqui ou clique para selecionar
-                </p>
+    <div className="w-full max-w-2xl mx-auto p-4">
+      {hasData ? (
+        <div className="text-center p-4 border rounded-lg">
+          <p className="mb-2">Você já possui uma lista IPTV carregada.</p>
+          <p className="text-sm text-muted-foreground mb-4">
+            Para carregar uma nova lista, primeiro exclua a atual através do menu de usuário.
+          </p>
+        </div>
+      ) : (
+        <Tabs defaultValue="file" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="file" className="flex items-center gap-2">
+              <UploadIcon className="h-4 w-4" />
+              <span>Upload File</span>
+            </TabsTrigger>
+            <TabsTrigger value="url" className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4" />
+              <span>URL</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="file" className="mt-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="m3u-file">Upload M3U File</Label>
                 <Input
+                  ref={fileInputRef}
+                  id="m3u-file"
                   type="file"
                   accept=".m3u,.m3u8"
-                  className="max-w-xs"
                   onChange={handleFileUpload}
-                  disabled={isLoading}
+                  disabled={isUploading}
                 />
               </div>
-            </TabsContent>
-            <TabsContent value="url" className="mt-4">
-              <form onSubmit={handleUrlSubmit} className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <LinkIcon className="w-5 h-5 text-muted-foreground" />
+
+              {isUploading && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Uploading... {uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-primary h-full transition-all duration-300 ease-in-out"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {uploadError && <div className="text-destructive text-sm">{uploadError}</div>}
+
+              {uploadSuccess && <div className="text-green-500 text-sm">Upload successful!</div>}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="url" className="mt-4">
+            <form onSubmit={handleUrlSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="m3u-url">M3U URL</Label>
+                <div className="flex gap-2">
                   <Input
+                    id="m3u-url"
                     type="url"
-                    placeholder="https://exemplo.com/playlist.m3u"
+                    placeholder="https://example.com/playlist.m3u"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    disabled={isLoading}
+                    disabled={isUploading}
                   />
+                  <Button type="submit" disabled={isUploading || !url.trim()}>
+                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
+                  </Button>
                 </div>
-                <Button type="submit" disabled={isLoading} className="w-full">
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Carregando...
-                    </>
-                  ) : (
-                    "Carregar URL"
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+              </div>
 
-          {isLoading && (
-            <div className="mt-4">
-              <Progress value={progress} className="h-2" />
-              <p className="text-xs text-center mt-1 text-muted-foreground">
-                {progress < 100 ? "Processando..." : "Concluído!"}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </div>
-    </motion.div>
+              {isUploading && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Loading... {uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-primary h-full transition-all duration-300 ease-in-out"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {uploadError && <div className="text-destructive text-sm">{uploadError}</div>}
+
+              {uploadSuccess && <div className="text-green-500 text-sm">URL loaded successfully!</div>}
+            </form>
+          </TabsContent>
+        </Tabs>
+      )}
+    </div>
   )
 }
 

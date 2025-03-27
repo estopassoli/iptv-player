@@ -1,11 +1,30 @@
-import { IPTVContent } from "@/components/iptv-content"
+import { UserMenu } from "@/components/auth/user-menu"
+import { ClientContentWrapper } from "@/components/client-content-wrapper"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload } from "@/components/upload"
+import prisma from "@/lib/prisma"
 import { PlayCircle } from "lucide-react"
-import { Suspense } from "react"
+import { cookies } from "next/headers"
 
-export default function Home() {
+async function getUserEmail() {
+  // In a real app, you'd use a session or token
+  // For this example, we'll read from a cookie
+  const cookieStore = await cookies()
+  const userId = cookieStore.get("iptv_user_id")?.value
+
+  if (!userId) return null
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  })
+
+  return user?.email
+}
+
+export default async function Home() {
+  const userEmail = await getUserEmail()
+
   return (
     <main className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       <ScrollArea>
@@ -16,7 +35,10 @@ export default function Home() {
                 <PlayCircle size={32} />
                 <h1 className="text-3xl font-bold">IPTV Viewer</h1>
               </div>
-              <ThemeToggle />
+              <div className="flex items-center gap-2">
+                <UserMenu userEmail={userEmail} />
+                <ThemeToggle />
+              </div>
             </div>
           </div>
         </div>
@@ -35,44 +57,22 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="border-b border-dashed w-full flex">
-          <div className="container mx-auto">
-            <div className="flex flex-col border-dashed border-l border-r p-2 mx-auto">
-              <Upload />
-            </div>
-          </div>
-        </div>
-        <div className="border-b border-dashed w-full flex overflow-x-hidden">
-          <div className="container mx-auto">
-            <div className="flex flex-col border-dashed border-l border-r p-2 mx-auto">
-              <Suspense fallback={<div className="mt-8 text-center">Carregando conteúdo...</div>}>
-                <IPTVContent />
-              </Suspense>
-            </div>
-          </div>
-        </div>
+        <ClientContentWrapper />
 
         <div className="border-dashed w-full flex">
           <div className="container mx-auto">
-            <div className="flex flex-col border-dashed border-l border-r p-2 py-4 text-sm mx-auto">
-              <div className="flex items-center gap-1">
-                <p>
-                  Built by
-                </p>
+            <div className="flex flex-col border-dashed border-l border-r p-2 py-4 h-[24svh] text-sm mx-auto">
+              <h1>
+                Built by{" "}
                 <a className="underline font-semibold" href="https://github.com/estopassoli">
                   estopassoli
                 </a>
-                <p>
-                  with
-                </p>
-                <a className="underline font-semibold" href="https://v0.dev">
-                  v0.dev.
-                </a>
-                <p>The source code is available on</p>
+                . The source code is available on{" "}
                 <a className="underline font-semibold" href="https://github.com/estopassoli/iptv-player">
                   GitHub
                 </a>
-              </div>
+                .
+              </h1>
             </div>
           </div>
         </div>

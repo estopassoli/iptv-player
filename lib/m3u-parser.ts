@@ -41,22 +41,13 @@ export interface IPTVData {
 
 // Função para extrair informações de temporada e episódio do nome
 function extractSeasonEpisode(name: string): { season: number; episode: number } | null {
-  // Padrões comuns: S01E01, S1E1, 1x01, etc.
-  const patterns = [
-    /S(\d+)[\s._-]*E(\d+)/i, // S01E01, S01 E01
-    /(\d+)x(\d+)/i, // 1x01
-    /Season\s*(\d+)\s*Episode\s*(\d+)/i, // Season 1 Episode 1
-    /S(\d+)[\s._-]*EP(\d+)/i, // S01EP01
-    /E(\d+)/i, // E01 (assume temporada 1)
-  ]
+  const regex = /S(\d{1,2})E(\d{1,2})/i
+  const match = name.match(regex)
 
-  for (const pattern of patterns) {
-    const match = name.match(pattern)
-    if (match) {
-      const season = match[1] ? Number.parseInt(match[1], 10) : 1
-      const episode = Number.parseInt(match[2] || match[1], 10)
-      return { season, episode }
-    }
+  if (match) {
+    const season = parseInt(match[1], 10)
+    const episode = parseInt(match[2], 10)
+    return { season, episode }
   }
 
   return null
@@ -101,7 +92,7 @@ export function parseM3U(content: string): IPTVData {
         id: `channel-${index}`,
         name: item.name || `Canal ${index + 1}`,
         url: cleanedUrl,
-        logo: '/placeholder.svg',
+        logo: item.tvg?.logo || undefined,
         group: group,
         epg: item.tvg?.id || undefined,
       }
@@ -111,6 +102,8 @@ export function parseM3U(content: string): IPTVData {
         channel.season = seasonEpisodeInfo.season
         channel.episode = seasonEpisodeInfo.episode
       }
+
+
 
       channels.push(channel)
     })
@@ -137,6 +130,7 @@ export function parseM3U(content: string): IPTVData {
 
     console.timeEnd("parseM3U")
     console.log(`Processados ${sortedChannels.length} canais em ${categories.size} categorias`)
+
 
     return {
       channels: sortedChannels,

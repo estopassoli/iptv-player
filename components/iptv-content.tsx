@@ -9,14 +9,15 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VideoPlayer } from "@/components/video-player"
 import { useMobile } from "@/hooks/use-mobile"
-import { getAllCategories, getChannelsPaginated, hasIPTVData, searchChannelsPaginated } from "@/lib/idb-storage"
+import { getAllCategories, getChannelsPaginated, hasIPTVData, searchChannelsPaginated } from "@/lib/prisma-storage"
 import { type SeriesInfo, getFirstEpisode, groupChannelsIntoSeries } from "@/lib/series-manager"
 import { getThumbnail } from "@/lib/thumbnail-manager"
+import { initializeUser } from "@/lib/user-service"
 import type { Channel } from "@/types/iptv"
+import axios from "axios"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Film,
-  FilterIcon,
   Folder,
   Globe,
   ListVideo,
@@ -29,7 +30,6 @@ import {
   X,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
 type AudioType = "all" | "dubbed" | "subbed"
 
@@ -58,20 +58,27 @@ export function IPTVContent() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const PAGE_SIZE = 20
 
-  // Carregar categorias e verificar se há conteúdo
+  // Initialize user and load initial data
   useEffect(() => {
+    // Only run in browser environment
+    if (typeof window === "undefined") return
+
     const loadInitialData = async () => {
       try {
         setIsLoading(true)
+
+        // Initialize user
+        await initializeUser()
+
         const contentExists = await hasIPTVData()
 
         if (contentExists) {
-          // Carregar categorias
+          // Load categories
           const allCategories = await getAllCategories()
           setCategories(allCategories)
           setHasContent(true)
 
-          // Carregar primeira página de canais
+          // Load first page of channels
           await loadChannels(0)
         } else {
           setHasContent(false)
@@ -87,21 +94,21 @@ export function IPTVContent() {
     loadInitialData()
   }, [])
 
-  // Debounce para o termo de busca
+  // Debounce for search term
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
     }
 
-    // Não iniciar busca para termos muito curtos
+    // Don't start search for very short terms
     if (searchTerm.length === 1) {
       return
     }
 
-    // Definir um timeout para atualizar o termo de busca debounced
+    // Set a timeout to update the debounced search term
     searchTimeoutRef.current = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm)
-    }, 300) // 300ms de debounce
+    }, 300) // 300ms debounce
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -110,16 +117,16 @@ export function IPTVContent() {
     }
   }, [searchTerm])
 
-  // Função para carregar thumbnails personalizadas
+  // Function to load custom thumbnails
   const loadThumbnails = async (channelIds: string[]) => {
     const newThumbnails: Record<string, string> = {}
 
-    // Processar em lotes para não sobrecarregar
+    // Process in batches to avoid overload
     const batchSize = 10
     for (let i = 0; i < channelIds.length; i += batchSize) {
       const batch = channelIds.slice(i, i + batchSize)
 
-      // Processar cada item do lote em paralelo
+      // Process each item in the batch in parallel
       await Promise.all(
         batch.map(async (id) => {
           try {
@@ -134,51 +141,55 @@ export function IPTVContent() {
       )
     }
 
-    // Atualizar o estado com as novas thumbnails
+    // Update state with new thumbnails
     setThumbnails((prev) => ({ ...prev, ...newThumbnails }))
   }
 
-  // Função para filtrar canais por tipo de áudio (dublado/legendado)
+  // Function to filter channels by audio type (dubbed/subbed)
   const filterChannelsByAudioType = (channels: Channel[]): Channel[] => {
     if (audioType === "all") {
       return channels
     }
 
     return channels.filter((channel) => {
+      // Check if the channel is subtitled by looking for [L] tag
       const isSubbed = channel.name.includes("[L]")
+
+      // For "subbed" type, return channels with [L] tag
+      // For "dubbed" type, return channels without [L] tag
       return audioType === "subbed" ? isSubbed : !isSubbed
     })
   }
 
-  // Função atualizada para buscar thumbnails do TMDB via API
+  // Updated function to fetch TMDB thumbnails via API
   const fetchTMDBThumbnail = async (item: Channel) => {
     try {
-      // Verificar se já temos a thumbnail em cache
+      // Check if we already have the thumbnail in cache
       if (tmdbThumbnails[item.id]) {
         return tmdbThumbnails[item.id]
       }
 
-      // Limpar o título para busca (remover tags como [L], informações de temporada, etc.)
+      // Clean the title for search (remove tags like [L], season info, etc.)
       const cleanTitle = item.name
         .replace(/\[L\]/g, "")
         .replace(/S\d+\s*E\d+/gi, "")
         .replace(/\d+x\d+/g, "")
         .trim()
 
-      // Determinar se é um filme ou série com base na presença de season/episode
+      // Determine if it's a movie or series based on season/episode presence
       const isEpisode = item.season !== undefined && item.episode !== undefined
       const type = isEpisode || (item as any).isSeries ? "tv" : "movie"
 
-      // Fazer a requisição para o endpoint de API
+      // Make the request to the API endpoint
       const response = await fetch(`/api/tmdb-thumbnail?title=${encodeURIComponent(cleanTitle)}&type=${type}`)
 
       if (!response.ok) {
-        throw new Error("Falha ao buscar thumbnail")
+        throw new Error("Failed to fetch thumbnail")
       }
 
       const data = await response.json()
 
-      // Se encontrou uma imagem, armazenar no cache
+      // If an image was found, store it in cache
       if (data.url) {
         setTmdbThumbnails((prev) => ({
           ...prev,
@@ -189,12 +200,12 @@ export function IPTVContent() {
 
       return null
     } catch (error) {
-      console.error(`Erro ao buscar thumbnail do TMDB para ${item.name}:`, error)
+      console.error(`Error fetching TMDB thumbnail for ${item.name}:`, error)
       return null
     }
   }
 
-  // Função para carregar canais com paginação
+  // Function to load channels with pagination
   const loadChannels = useCallback(
     async (page: number) => {
       try {
@@ -218,32 +229,64 @@ export function IPTVContent() {
           result = await getChannelsPaginated(activeCategory, page, PAGE_SIZE)
         }
 
-        // Filtrar por tipo de áudio (dublado/legendado)
+        // Filter by audio type (dubbed/subbed)
         const filteredByAudio = filterChannelsByAudioType(result.channels)
 
-        // Agrupar canais em séries
+        // Group channels into series
         const { series, standaloneChannels } = groupChannelsIntoSeries(filteredByAudio)
 
-        // Log para debug
+        // Debug log for series episodes
         console.log(
-          "Séries encontradas:",
+          "Series episodes by audio type:",
+          audioType,
           series.map((s) => ({
-            nome: s.name,
-            temporadas: Object.keys(s.seasons)
+            name: s.name,
+            seasons: Object.entries(s.seasons).map(([seasonNum, season]) => ({
+              season: seasonNum,
+              episodes: season.episodes.map((ep) => ({
+                name: ep.name,
+                isSubbed: ep.name.includes("[L]"),
+                episode: ep.episode,
+              })),
+            })),
+          })),
+        )
+
+        // Debug log for series episodes
+        console.log(
+          "Series episodes by audio type:",
+          series.map((s) => ({
+            name: s.name,
+            seasons: Object.entries(s.seasons).map(([seasonNum, season]) => ({
+              season: seasonNum,
+              episodes: season.episodes.map((ep) => ({
+                name: ep.name,
+                isSubbed: ep.name.includes("[L]"),
+              })),
+            })),
+          })),
+        )
+
+        // Debug log
+        console.log(
+          "Series found:",
+          series.map((s) => ({
+            name: s.name,
+            seasons: Object.keys(s.seasons)
               .map(Number)
               .sort((a, b) => a - b),
           })),
         )
 
-        // Filtrar por tipo de visualização (séries/filmes)
+        // Filter by view mode (series/movies)
         let displayedItems: Channel[] = []
 
         if (viewMode === "series") {
-          // Mostrar apenas séries
+          // Show only series
           setSeries(series)
           setStandaloneChannels([])
 
-          // Para cada série, pegar o primeiro episódio como representante
+          // For each series, get the first episode as representative
           displayedItems = series
             .map((serie) => {
               const firstEpisode = getFirstEpisode(serie)
@@ -259,16 +302,16 @@ export function IPTVContent() {
             })
             .filter(Boolean) as Channel[]
         } else if (viewMode === "movies") {
-          // Mostrar apenas filmes (canais independentes)
+          // Show only movies (standalone channels)
           setSeries([])
           setStandaloneChannels(standaloneChannels)
           displayedItems = standaloneChannels
         } else {
-          // Mostrar tudo
+          // Show everything
           setSeries(series)
           setStandaloneChannels(standaloneChannels)
 
-          // Para cada série, pegar o primeiro episódio como representante
+          // For each series, get the first episode as representative
           const seriesItems = series
             .map((serie) => {
               const firstEpisode = getFirstEpisode(serie)
@@ -287,10 +330,10 @@ export function IPTVContent() {
           displayedItems = [...seriesItems, ...standaloneChannels]
         }
 
-        // Atualizar o total de itens após a filtragem
+        // Update total items after filtering
         const totalFilteredCount = displayedItems.length
 
-        // Verificar se há mais páginas após a filtragem
+        // Check if there are more pages after filtering
         const hasMoreAfterFilter = page * PAGE_SIZE + displayedItems.length < totalFilteredCount
 
         if (isFirstPage) {
@@ -299,12 +342,12 @@ export function IPTVContent() {
           setChannels((prev) => [...prev, ...displayedItems])
         }
 
-        // Carregar thumbnails personalizadas
+        // Load custom thumbnails
         await loadThumbnails(displayedItems.map((channel) => channel.id))
 
-        // Buscar thumbnails do TMDB para os primeiros itens (para não sobrecarregar a API)
+        // Fetch TMDB thumbnails for the first items (to avoid overloading the API)
         const fetchTMDBThumbnails = async () => {
-          const itemsToFetch = displayedItems.slice(0, 20) // Limitar a 20 itens por vez
+          const itemsToFetch = displayedItems.slice(0, 20) // Limit to 20 items at a time
 
           for (const item of itemsToFetch) {
             await fetchTMDBThumbnail(item)
@@ -317,7 +360,7 @@ export function IPTVContent() {
         setHasMorePages(hasMoreAfterFilter)
         setCurrentPage(page)
       } catch (error) {
-        console.error("Erro ao carregar canais:", error)
+        console.error("Error loading channels:", error)
       } finally {
         setIsLoading(false)
         setIsSearching(false)
@@ -327,37 +370,40 @@ export function IPTVContent() {
     [activeCategory, debouncedSearchTerm, audioType, viewMode],
   )
 
-  // Carregar canais quando a categoria, termo de busca, tipo de áudio ou modo de visualização mudar
+  // Load channels when category, search term, audio type, or view mode changes
   useEffect(() => {
     if (hasContent) {
-      // Resetar para a primeira página
+      // Reset to first page
       setCurrentPage(0)
       loadChannels(0)
     }
   }, [activeCategory, debouncedSearchTerm, audioType, viewMode, hasContent, loadChannels])
 
-  // Carregar mais canais
+  // Load more channels
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMorePages) {
       loadChannels(currentPage + 1)
     }
   }
 
-  const handleItemClick = (item: Channel) => {
-    // Verificar se o item é uma série
+  const handleItemClick = async (item: Channel) => {
+    // Check if the item is a series
+    const thumbReq = await axios.get(`/api/tmdb-thumbnail?title=${encodeURIComponent(item.name)}&type=auto`)
+    console.log(thumbReq)
     if ((item as any).isSeries) {
-      // Encontrar a série correspondente
+      // Find the corresponding series
       const seriesItem = series.find((s) => s.id === item.id)
+
       if (seriesItem) {
-        setSelectedSeries(seriesItem)
+        setSelectedSeries({ ...seriesItem, thumbnail: thumbReq.data.url ?? "/placeholder.svg" })
       }
     } else {
-      setSelectedItem(item)
+      setSelectedItem({ ...item, logo: thumbReq.data.url ?? "/placeholder.svg" })
     }
   }
 
   const handleClosePlayer = () => {
-    // Recarregar thumbnails após fechar o player (caso tenha capturado novas)
+    // Reload thumbnails after closing the player (in case new ones were captured)
     if (channels.length > 0) {
       loadThumbnails(channels.map((channel) => channel.id))
     }
@@ -365,13 +411,13 @@ export function IPTVContent() {
     setSelectedSeries(null)
   }
 
-  // Limpar busca
+  // Clear search
   const handleClearSearch = () => {
     setSearchTerm("")
     setDebouncedSearchTerm("")
   }
 
-  // Função para obter o título da aba ativa
+  // Function to get the active tab title
   const getActiveTabTitle = () => {
     switch (audioType) {
       case "dubbed":
@@ -403,7 +449,7 @@ export function IPTVContent() {
         <SeriesPlayer series={selectedSeries} onClose={handleClosePlayer} />
       ) : (
         <div className="flex flex-col md:flex-row gap-6">
-          {/* Sidebar com categorias */}
+          {/* Sidebar with categories */}
           <div className="w-full md:w-64 shrink-0">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -456,11 +502,46 @@ export function IPTVContent() {
               </ScrollArea>
             </div>
 
-            {/* Filtro de tipo de conteúdo */}
-
+            {/* Content type filter */}
+            <div className="mt-4 bg-card rounded-lg border shadow-sm">
+              <div className="p-3 font-medium border-b">
+                <span>Tipo de Conteúdo</span>
+              </div>
+              <div className="p-2">
+                <div className="flex flex-col space-y-1">
+                  <Button
+                    variant={viewMode === "all" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("all")}
+                    className="justify-start"
+                  >
+                    <Tv className="mr-2 h-4 w-4" />
+                    Todos
+                  </Button>
+                  <Button
+                    variant={viewMode === "series" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("series")}
+                    className="justify-start"
+                  >
+                    <ListVideo className="mr-2 h-4 w-4" />
+                    Séries
+                  </Button>
+                  <Button
+                    variant={viewMode === "movies" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("movies")}
+                    className="justify-start"
+                  >
+                    <Film className="mr-2 h-4 w-4" />
+                    Filmes
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Área de conteúdo principal */}
+          {/* Main content area */}
           <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">
@@ -476,52 +557,9 @@ export function IPTVContent() {
                   {isSearching ? "Buscando..." : "Carregando..."}
                 </div>
               )}
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <Button variant='secondary' size='icon'>
-                    <FilterIcon />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="left">
-                  <div className="p-3 font-medium border-b">
-                    <span>Tipo de Conteúdo</span>
-                  </div>
-                  <div className="p-2">
-                    <div className="flex flex-col space-y-1">
-                      <Button
-                        variant={viewMode === "all" ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode("all")}
-                        className="justify-start"
-                      >
-                        <Tv className="mr-2 h-4 w-4" />
-                        Todos
-                      </Button>
-                      <Button
-                        variant={viewMode === "series" ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode("series")}
-                        className="justify-start"
-                      >
-                        <ListVideo className="mr-2 h-4 w-4" />
-                        Séries
-                      </Button>
-                      <Button
-                        variant={viewMode === "movies" ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode("movies")}
-                        className="justify-start"
-                      >
-                        <Film className="mr-2 h-4 w-4" />
-                        Filmes
-                      </Button>
-                    </div>
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
 
-            {/* Tabs para Dublado/Legendado */}
+            {/* Tabs for Dubbed/Subbed */}
             <Tabs
               defaultValue="all"
               value={audioType}
@@ -580,16 +618,16 @@ export function IPTVContent() {
                                   />
                                 ) : item.logo ? (
                                   <img
-                                    src={"/placeholder.svg"}
+                                    src={thumbnails[item.id] || "/placeholder.svg"}
                                     alt={item.name}
                                     className="w-full h-full object-cover"
                                     onError={(e) => {
-                                      // Tentar buscar do TMDB quando a imagem falhar
+                                      // Try to fetch from TMDB when image fails
                                       fetchTMDBThumbnail(item).then((url) => {
                                         if (url) {
-                                          ; (e.target as HTMLImageElement).src = url
+                                          ;(e.target as HTMLImageElement).src = url
                                         } else {
-                                          ; (e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
+                                          ;(e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
                                         }
                                       })
                                     }}
@@ -607,14 +645,14 @@ export function IPTVContent() {
                                   <PlayCircle className="w-10 h-10 text-primary" />
                                 </div>
 
-                                {/* Indicador de Legendado */}
+                                {/* Subbed indicator */}
                                 {item.name.includes("[L]") && (
                                   <div className="absolute top-2 right-2 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
                                     LEG
                                   </div>
                                 )}
 
-                                {/* Indicador de Série */}
+                                {/* Series indicator */}
                                 {(item as any).isSeries && (
                                   <div className="absolute top-2 left-2 bg-secondary text-secondary-foreground text-xs px-1.5 py-0.5 rounded">
                                     SÉRIE
@@ -623,7 +661,7 @@ export function IPTVContent() {
                               </div>
                               <CardHeader className="p-3">
                                 <CardTitle className="text-base line-clamp-1">
-                                  {/* Remover o [L] do título exibido */}
+                                  {/* Remove [L] from displayed title */}
                                   {item.name.replace("[L]", "").trim()}
                                 </CardTitle>
                               </CardHeader>
@@ -640,7 +678,7 @@ export function IPTVContent() {
                           </motion.div>
                         ))}
 
-                        {/* Botão "Carregar mais" */}
+                        {/* "Load more" button */}
                         {hasMorePages && (
                           <div className="col-span-full flex justify-center py-4">
                             <Button
@@ -687,4 +725,3 @@ export function IPTVContent() {
     </div>
   )
 }
-

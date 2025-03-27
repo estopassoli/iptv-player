@@ -1,13 +1,13 @@
 "use client"
 
-import { MediaInfoCard } from "@/components/media-info-card"
+import { useState, useEffect } from "react"
+import { motion } from "framer-motion"
+import { PlayCircle, Tv, ListVideo, Film, Info } from "lucide-react"
+import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { getThumbnail } from "@/lib/thumbnail-manager"
-import { motion } from "framer-motion"
-import { Film, Info, ListVideo, PlayCircle, Tv } from "lucide-react"
-import { useEffect, useState } from "react"
+import { MediaInfoCard } from "@/components/media-info-card"
 
 interface IPTVContentItemProps {
   item: any

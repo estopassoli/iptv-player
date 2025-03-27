@@ -1,75 +1,61 @@
 "use client"
 
+import type React from "react"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { hasIPTVData } from "@/lib/idb-storage"
-import { motion } from "framer-motion"
-import { Search, X } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useDebounce } from "@/hooks/use-debounce"
+import { Search } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
 
-export function SearchBar() {
+interface SearchBarProps {
+  onSearch?: (term: string) => void
+  placeholder?: string
+  className?: string
+}
+
+export function SearchBar({ onSearch, placeholder = "Buscar...", className = "" }: SearchBarProps) {
   const [searchTerm, setSearchTerm] = useState("")
-  const [hasContent, setHasContent] = useState(false)
+  const debouncedSearchTerm = useDebounce(searchTerm, 500)
+  const router = useRouter()
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    // Check if there's any content loaded using IndexedDB
-    const checkContent = async () => {
-      const contentExists = await hasIPTVData()
-      setHasContent(contentExists)
+    if (debouncedSearchTerm && debouncedSearchTerm.length > 2) {
+      if (onSearch) {
+        onSearch(debouncedSearchTerm)
+      } else {
+        router.push(`/search?q=${encodeURIComponent(debouncedSearchTerm)}`)
+      }
     }
+  }, [debouncedSearchTerm, onSearch, router])
 
-    checkContent()
-
-    // Set up event listener for search
-    const handleSearch = () => {
-      const event = new CustomEvent("iptv-search", {
-        detail: { searchTerm },
-      })
-      window.dispatchEvent(event)
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (searchTerm.trim()) {
+      if (onSearch) {
+        onSearch(searchTerm)
+      } else {
+        router.push(`/search?q=${encodeURIComponent(searchTerm)}`)
+      }
     }
-
-    // Debounce search to avoid too many events
-    const debounceTimeout = setTimeout(handleSearch, 300)
-
-    return () => clearTimeout(debounceTimeout)
-  }, [searchTerm])
-
-  const handleClearSearch = () => {
-    setSearchTerm("")
-    // Disparar evento de busca com termo vazio para limpar resultados
-    const event = new CustomEvent("iptv-search", {
-      detail: { searchTerm: "" },
-    })
-    window.dispatchEvent(event)
   }
 
-  if (!hasContent) return null
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="relative"
-    >
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <form onSubmit={handleSubmit} className={`relative flex w-full ${className}`}>
       <Input
-        placeholder="Buscar canais, filmes ou séries..."
-        className="pl-10 pr-10"
+        ref={inputRef}
+        type="text"
+        placeholder={placeholder}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
+        className="pr-10"
       />
-      {searchTerm && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-          onClick={handleClearSearch}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      )}
-    </motion.div>
+      <Button type="submit" variant="ghost" size="icon" className="absolute right-0 top-0 h-full">
+        <Search className="h-4 w-4" />
+      </Button>
+    </form>
   )
 }
 

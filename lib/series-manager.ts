@@ -18,26 +18,28 @@ export interface SeriesEpisode extends Channel {
   episodeNumber: number
 }
 
-// Melhorar a função extractSeriesBaseName para lidar melhor com diferentes formatos
+// Improved function to extract the base name of a series
 export function extractSeriesBaseName(name: string): string {
-  // Remover padrões comuns de temporada/episódio
+  // Remove common season/episode patterns and tags
   return name
-    .replace(/\s*\[L\]\s*/g, "") // Remover tag de legendado
-    .replace(/\s*S\d+\s*E\d+\s*/gi, "") // Remover S01E01
-    .replace(/\s*\d+x\d+\s*/g, "") // Remover 1x01
-    .replace(/\s*Season\s*\d+\s*Episode\s*\d+\s*/gi, "") // Remover Season 1 Episode 1
-    .replace(/\s*S\d+\s*EP\d+\s*/gi, "") // Remover S01EP01
-    .replace(/\s*E\d+\s*/gi, "") // Remover E01
-    .replace(/\s*-\s*Episodio\s*\d+\s*/gi, "") // Remover - Episodio 1
-    .replace(/\s*-\s*EP\s*\d+\s*/gi, "") // Remover - EP 1
-    .replace(/\s*-\s*E\s*\d+\s*/gi, "") // Remover - E 1
-    .replace(/\s*T\d+\s*/gi, "") // Remover T1 (temporada)
+    .replace(/\s*\[L\]\s*/g, "") // Remove subtitled tag
+    .replace(/\s*\[D\]\s*/g, "") // Remove dubbed tag (if exists)
+    .replace(/\s*S\d+\s*E\d+\s*/gi, "") // Remove S01E01
+    .replace(/\s*\d+x\d+\s*/g, "") // Remove 1x01
+    .replace(/\s*Season\s*\d+\s*Episode\s*\d+\s*/gi, "") // Remove Season 1 Episode 1
+    .replace(/\s*S\d+\s*EP\d+\s*/gi, "") // Remove S01EP01
+    .replace(/\s*E\d+\s*/gi, "") // Remove E01
+    .replace(/\s*-\s*Episodio\s*\d+\s*/gi, "") // Remove - Episodio 1
+    .replace(/\s*-\s*EP\s*\d+\s*/gi, "") // Remove - EP 1
+    .replace(/\s*-\s*E\s*\d+\s*/gi, "") // Remove - E 1
+    .replace(/\s*T\d+\s*/gi, "") // Remove T1 (temporada)
+    .replace(/\s*S\d+\s*/gi, "") // Remove S1, S01 (season)
     .trim()
 }
 
-// Função melhorada para extrair informações de temporada e episódio
+// Improved function to extract season and episode information
 function extractSeasonEpisodeInfo(name: string): { season: number; episode: number } | null {
-  // Padrões comuns para temporada/episódio
+  // Common patterns for season/episode
   const patterns = [
     // S01E01, S01 E01, S1E1
     { regex: /S(\d+)\s*E(\d+)/i, seasonGroup: 1, episodeGroup: 2 },
@@ -70,8 +72,11 @@ function extractSeasonEpisodeInfo(name: string): { season: number; episode: numb
     { regex: /-\s*E(\d+)/i, seasonGroup: null, episodeGroup: 1 },
     { regex: /-\s*EP(\d+)/i, seasonGroup: null, episodeGroup: 1 },
 
-    // Formato específico para Solo Leveling: S02E01, S01E01
+    // Solo Leveling specific format: S01E01, S02E01
     { regex: /S0?(\d+)E0?(\d+)/i, seasonGroup: 1, episodeGroup: 2 },
+
+    // Solo Leveling specific format: S01E01, S02E01 without the E
+    { regex: /S0?(\d+)0?(\d+)/i, seasonGroup: 1, episodeGroup: 2 },
   ]
 
   for (const pattern of patterns) {
@@ -80,48 +85,59 @@ function extractSeasonEpisodeInfo(name: string): { season: number; episode: numb
       const season = pattern.seasonGroup ? Number.parseInt(match[pattern.seasonGroup], 10) : 1
       const episode = Number.parseInt(match[pattern.episodeGroup], 10)
 
-      // Validar que os números são razoáveis (evitar falsos positivos)
+      // Validate that the numbers are reasonable (avoid false positives)
       if (season > 0 && season < 100 && episode > 0 && episode < 1000) {
         return { season, episode }
       }
     }
   }
 
+  // Check for specific patterns like "Solo Leveling S01E01" or "Solo Leveling S01"
+  if (name.includes("S01") || name.includes("S02")) {
+    // Try to extract episode number from the end of the name
+    const episodeMatch = name.match(/(\d+)$/)
+    if (episodeMatch) {
+      const episode = Number.parseInt(episodeMatch[1], 10)
+      const season = name.includes("S02") ? 2 : 1
+      return { season, episode }
+    }
+  }
+
   return null
 }
 
-// Corrigir a função groupChannelsIntoSeries para garantir que todas as temporadas sejam incluídas
+// Improved function to group channels into series
 export function groupChannelsIntoSeries(channels: Channel[]): {
   series: SeriesInfo[]
   standaloneChannels: Channel[]
 } {
   const seriesMap = new Map<string, SeriesInfo>()
   const standaloneChannels: Channel[] = []
-  const processedIds = new Set<string>() // Para evitar duplicatas
+  const processedIds = new Set<string>() // To avoid duplicates
 
-  // Primeiro passo: identificar séries e agrupar episódios
+  // First pass: identify series and group episodes
   channels.forEach((channel) => {
-    // Evitar processar o mesmo canal duas vezes
+    // Avoid processing the same channel twice
     if (processedIds.has(channel.id)) {
       return
     }
 
-    // Verificar se o canal já tem informações de temporada e episódio
+    // Check if the channel already has season and episode information
     let seasonInfo = null
 
     if (typeof channel.season === "number" && typeof channel.episode === "number") {
       seasonInfo = { season: channel.season, episode: channel.episode }
     } else {
-      // Tentar extrair informações de temporada/episódio do nome
+      // Try to extract season/episode information from the name
       seasonInfo = extractSeasonEpisodeInfo(channel.name)
     }
 
     if (seasonInfo) {
-      // Extrair o nome base da série
+      // Extract the base series name
       const seriesName = extractSeriesBaseName(channel.name)
       const seriesKey = seriesName.toLowerCase()
 
-      // Se a série ainda não existe no mapa, criar uma nova entrada
+      // If the series doesn't exist in the map yet, create a new entry
       if (!seriesMap.has(seriesKey)) {
         seriesMap.set(seriesKey, {
           id: `series-${seriesKey.replace(/[^a-z0-9]/g, "-")}`,
@@ -134,7 +150,7 @@ export function groupChannelsIntoSeries(channels: Channel[]): {
 
       const seriesInfo = seriesMap.get(seriesKey)!
 
-      // Se a temporada ainda não existe, criar uma nova entrada
+      // If the season doesn't exist yet, create a new entry
       if (!seriesInfo.seasons[seasonInfo.season]) {
         seriesInfo.seasons[seasonInfo.season] = {
           number: seasonInfo.season,
@@ -142,26 +158,26 @@ export function groupChannelsIntoSeries(channels: Channel[]): {
         }
       }
 
-      // Criar uma cópia do canal com as informações de temporada/episódio
+      // Create a copy of the channel with season/episode information
       const channelWithSeasonInfo = {
         ...channel,
         season: seasonInfo.season,
         episode: seasonInfo.episode,
       }
 
-      // Adicionar o episódio à temporada
+      // Add the episode to the season
       seriesInfo.seasons[seasonInfo.season].episodes.push(channelWithSeasonInfo)
 
-      // Marcar como processado
+      // Mark as processed
       processedIds.add(channel.id)
     } else {
-      // Se não tem informações de temporada/episódio, considerar como canal independente
+      // If it doesn't have season/episode information, consider it a standalone channel
       standaloneChannels.push(channel)
       processedIds.add(channel.id)
     }
   })
 
-  // Ordenar episódios dentro de cada temporada
+  // Sort episodes within each season
   seriesMap.forEach((series) => {
     Object.values(series.seasons).forEach((season) => {
       season.episodes.sort((a, b) => {
@@ -173,8 +189,25 @@ export function groupChannelsIntoSeries(channels: Channel[]): {
     })
   })
 
-  // Converter o mapa em array
+  // Convert the map to an array
   const seriesArray = Array.from(seriesMap.values())
+
+  // Debug log
+  console.log(
+    "Grouped series:",
+    seriesArray.map((s) => ({
+      name: s.name,
+      seasons: Object.entries(s.seasons).map(([seasonNum, season]) => ({
+        season: seasonNum,
+        episodeCount: season.episodes.length,
+        episodes: season.episodes.map((ep) => ({
+          name: ep.name,
+          isSubbed: ep.name.includes("[L]"),
+          episode: ep.episode,
+        })),
+      })),
+    })),
+  )
 
   return {
     series: seriesArray,
@@ -182,7 +215,7 @@ export function groupChannelsIntoSeries(channels: Channel[]): {
   }
 }
 
-// Função para obter a primeira temporada e episódio de uma série
+// Function to get the first episode of a series
 export function getFirstEpisode(series: SeriesInfo): Channel | null {
   const seasonNumbers = Object.keys(series.seasons)
     .map(Number)
@@ -196,11 +229,11 @@ export function getFirstEpisode(series: SeriesInfo): Channel | null {
   return firstSeason.episodes[0]
 }
 
-// Função para obter todas as temporadas e episódios de uma série
+// Function to get all episodes of a series
 export function getAllEpisodes(series: SeriesInfo): SeriesEpisode[] {
   const episodes: SeriesEpisode[] = []
 
-  Object.values(series.seasons).forEach((season) => {
+  Object.entries(series.seasons).forEach(([seasonNum, season]) => {
     season.episodes.forEach((episode) => {
       episodes.push({
         ...episode,
@@ -209,6 +242,18 @@ export function getAllEpisodes(series: SeriesInfo): SeriesEpisode[] {
       })
     })
   })
+
+  // Debug log
+  console.log(
+    "All episodes for series:",
+    series.name,
+    episodes.map((ep) => ({
+      name: ep.name,
+      season: ep.seasonNumber,
+      episode: ep.episodeNumber,
+      isSubbed: ep.name.includes("[L]"),
+    })),
+  )
 
   return episodes
 }
