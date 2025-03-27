@@ -63,6 +63,7 @@ export default function RootLayout({
           disableTransitionOnChange
           storageKey="iptv-theme"
         >
+          <Toaster />
           {children}
         </ThemeProvider>
       </body>
@@ -74,4 +75,6 @@ import "./globals.css"
 
 
 
+import { Toaster } from "@/components/ui/toaster"
 import './globals.css'
+

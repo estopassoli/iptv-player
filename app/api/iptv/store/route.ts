@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // Store channels in batches
     if (channels && channels.length > 0) {
       // Process in smaller batches to avoid DB limits
-      const batchSize = 1000
+      const batchSize = 100 * 1000; // 100k channels at a time
       for (let i = 0; i < channels.length; i += batchSize) {
         const batch = channels.slice(i, i + batchSize)
 
