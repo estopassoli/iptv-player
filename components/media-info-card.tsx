@@ -21,42 +21,71 @@ export function MediaInfoCard({ title, type = "auto", season, episode, className
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Adicione um sistema de cache para evitar requisições repetidas para o mesmo título/temporada/episódio
+
+  // No início do componente, adicione:
+  const cacheKey = `media-info-${title}-${type}-${season}-${episode}`
+  const cachedData = sessionStorage.getItem(cacheKey)
+
+  // Modifique o useEffect que busca informações de mídia:
   useEffect(() => {
-    const fetchMediaInfo = async () => {
+    // Verificar se já temos dados em cache
+    if (cachedData) {
       try {
-        setLoading(true)
-        setError(null)
+        const parsedData = JSON.parse(cachedData)
+        setMediaInfo(parsedData)
+        setLoading(false)
+        return
+      } catch (e) {
+        console.error("Erro ao analisar dados em cache:", e)
+        // Se houver erro ao analisar o cache, continuar com a busca normal
+      }
+    }
 
-        // Construir URL de busca
-        let url = `/api/media-info?title=${encodeURIComponent(title)}&type=${type}`
+    // Se não tiver em cache, buscar as informações
+    const fetchMediaInfo = async () => {
+      if (!title) return
 
-        // Adicionar parâmetros de temporada e episódio, se disponíveis
+      setLoading(true)
+      setError(null)
+
+      try {
+        const params = new URLSearchParams()
+        params.append("title", title)
+
+        if (type) {
+          params.append("type", type)
+        }
+
         if (season !== undefined) {
-          url += `&season=${season}`
-        }
-        if (episode !== undefined) {
-          url += `&episode=${episode}`
+          params.append("season", season.toString())
         }
 
-        const response = await fetch(url)
+        if (episode !== undefined) {
+          params.append("episode", episode.toString())
+        }
+
+        const response = await fetch(`/api/media-info?${params.toString()}`)
 
         if (!response.ok) {
           throw new Error("Falha ao buscar informações de mídia")
         }
 
         const data = await response.json()
+
+        // Armazenar em cache
+        sessionStorage.setItem(cacheKey, JSON.stringify(data))
+
         setMediaInfo(data)
       } catch (err) {
         console.error("Erro ao buscar informações de mídia:", err)
-        setError("Não foi possível carregar informações adicionais")
+        setError("Não foi possível carregar informações de mídia")
       } finally {
         setLoading(false)
       }
     }
 
-    if (title) {
-      fetchMediaInfo()
-    }
+    fetchMediaInfo()
   }, [title, type, season, episode])
 
   // Renderizar estado de carregamento

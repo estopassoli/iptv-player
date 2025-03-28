@@ -617,7 +617,7 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
       })
   }
 
-  // Renderizar tela de carregamento enquanto busca a URL
+  /* // Renderizar tela de carregamento enquanto busca a URL
   if (fetchingUrl || isRetrying) {
     return (
       <motion.div
@@ -639,7 +639,7 @@ export function VideoPlayer({ item, onClose }: VideoPlayerProps) {
         </Card>
       </motion.div>
     )
-  }
+  } */
 
   return (
     <motion.div

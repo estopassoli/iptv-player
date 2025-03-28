@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useMobile } from "@/hooks/use-mobile"
+import { formatTime } from "@/lib/format-time"
 import { type SeriesEpisode, type SeriesInfo, getAllEpisodes } from "@/lib/series-manager"
 import { saveThumbnail } from "@/lib/thumbnail-manager"
 import { motion } from "framer-motion"
@@ -75,12 +76,6 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
   const [hoverTime, setHoverTime] = useState<number | null>(null)
   const [hoverPosition, setHoverPosition] = useState<number | null>(null)
 
-  // Função para formatar o tempo em minutos e segundos
-  const formatTime = (timeInSeconds: number): string => {
-    const minutes = Math.floor(timeInSeconds / 60)
-    const seconds = Math.floor(timeInSeconds % 60)
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
 
   // Definir todas as temporadas como abertas por padrão
   useEffect(() => {
@@ -269,6 +264,41 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
     setDefaultOpenValues(seasonValues)
   }, [series])
 
+  // Carregar URL do vídeo quando o episódio mudar
+  useEffect(() => {
+    // Evitar requisições se não houver episódio ou URL
+    if (!currentEpisode?.url) return
+
+    // Verificar se já temos a URL em cache para este episódio
+    const cachedUrl = sessionStorage.getItem(`video-url-${currentEpisode.id}`)
+    if (cachedUrl) {
+      console.log("Usando URL em cache para o episódio:", currentEpisode.id)
+      setVideoUrl(cachedUrl)
+      setFetchingUrl(false)
+      return
+    }
+
+    // Se não tiver em cache, buscar a URL
+    fetchVideoUrl(currentEpisode.url)
+  }, [currentEpisode?.id])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose()
+      } else if (e.key === " " || e.key === "k") {
+        // Espaço ou tecla K para play/pause
+        togglePlay()
+      } else if (e.key === "i") {
+        // Tecla I para alternar informações de mídia
+        //setShowMediaInfo((prev) => !prev)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
+
   // Função para obter a URL real do vídeo
   const fetchVideoUrl = async (episodeUrl: string) => {
     try {
@@ -294,6 +324,12 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
       }
 
       console.log("URL real do vídeo obtida:", data.videoUrl, "Proxied:", data.proxied)
+
+      // Armazenar a URL em cache
+      if (currentEpisode?.id) {
+        sessionStorage.setItem(`video-url-${currentEpisode.id}`, data.videoUrl)
+      }
+
       setVideoUrl(data.videoUrl)
     } catch (err) {
       console.error("Erro ao obter URL do vídeo:", err)
@@ -302,30 +338,6 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
       setFetchingUrl(false)
     }
   }
-
-  // Carregar URL do vídeo quando o episódio mudar
-  useEffect(() => {
-    if (currentEpisode?.url) {
-      fetchVideoUrl(currentEpisode.url)
-    }
-  }, [currentEpisode])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose()
-      } else if (e.key === " " || e.key === "k") {
-        // Espaço ou tecla K para play/pause
-        togglePlay()
-      } else if (e.key === "i") {
-        // Tecla I para alternar informações de mídia
-        //setShowMediaInfo((prev) => !prev)
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
 
   useEffect(() => {
     // Configurar o player de vídeo quando a URL estiver disponível
@@ -541,6 +553,10 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
 
       // Forçar o uso do proxy
       const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(currentEpisode.url)}`
+
+      // Armazenar a URL em cache
+      sessionStorage.setItem(`video-url-${currentEpisode.id}`, proxyUrl)
+
       setVideoUrl(proxyUrl)
     } catch (error) {
       console.error("Erro ao tentar com proxy:", error)
@@ -658,7 +674,7 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
     // Remover temporadas sem episódios após filtragem
     .filter((season) => season.episodes.length > 0)
 
-  // Renderizar tela de carregamento enquanto busca a URL
+ /*  // Renderizar tela de carregamento enquanto busca a URL
   if (fetchingUrl || isRetrying) {
     return (
       <motion.div
@@ -680,7 +696,7 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
         </Card>
       </motion.div>
     )
-  }
+  } */
 
   return (
     <motion.div
@@ -752,9 +768,8 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
 
                     {/* Controles estilo Netflix */}
                     <div
-                      className={`absolute inset-0 flex flex-col justify-between transition-opacity duration-300 ${
-                        controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"
-                      }`}
+                      className={`absolute inset-0 flex flex-col justify-between transition-opacity duration-300 ${controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"
+                        }`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       {/* Título e informações no topo com gradiente melhorado */}
@@ -899,18 +914,31 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
                             )}
 
                             {/* Slider para progresso */}
-                            <div className="relative">
+                            <div className="relative h-max w-full">
+                              {/* Fundo do slider (parte não carregada) */}
+                              <div className="absolute top-1/2 left-0 h-1 w-full -translate-y-1/2 bg-muted/50 rounded-full z-0 pointer-events-none" />
+
                               {/* Indicador de buffer */}
                               <div
-                                className="absolute top-1/2 left-0 h-1 -translate-y-1/2 bg-white/50 rounded-full z-10 pointer-events-none"
+                                className="absolute top-1/2 left-0 h-1 -translate-y-1/2 bg-white rounded-full z-10 pointer-events-none"
                                 style={{ width: `${bufferProgress}%` }}
                               />
+
                               <Slider
+                                defaultValue={[videoRef.current?.currentTime || 0]}
                                 value={[videoRef.current?.currentTime || 0]}
+                                min={0}
                                 max={duration || 100}
-                                step={0.01}
-                                onValueChange={setVideoTime}
-                                className="z-20"
+                                step={1}
+                                onValueCommit={(value) => {
+                                  // Atualiza o tempo do vídeo quando o usuário soltar o slider
+                                  setVideoTime(value)
+                                }}
+                                onValueChange={(value) => {
+                                  // Só atualiza o tempo do vídeo quando o usuário soltar o slider
+                                  setVideoTime(value)
+                                }}
+                                className="w-full h-1 bg-transparent rounded-full cursor-pointer z-20"
                               />
                             </div>
                           </div>
@@ -1076,9 +1104,8 @@ export function SeriesPlayer({ series, onClose }: SeriesPlayerProps) {
                                 {episodes.map((episode) => (
                                   <div
                                     key={episode.id}
-                                    className={`p-2 rounded-md cursor-pointer flex items-center hover:bg-muted ${
-                                      currentEpisode?.id === episode.id ? "bg-primary/10 text-primary" : ""
-                                    }`}
+                                    className={`p-2 rounded-md cursor-pointer flex items-center hover:bg-muted ${currentEpisode?.id === episode.id ? "bg-primary/10 text-primary" : ""
+                                      }`}
                                     onClick={() =>
                                       changeEpisode({
                                         ...episode,

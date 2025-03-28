@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
 type AudioType = "all" | "dubbed" | "subbed"
 
@@ -503,42 +504,7 @@ export function IPTVContent() {
             </div>
 
             {/* Content type filter */}
-            <div className="mt-4 bg-card rounded-lg border shadow-sm">
-              <div className="p-3 font-medium border-b">
-                <span>Tipo de Conteúdo</span>
-              </div>
-              <div className="p-2">
-                <div className="flex flex-col space-y-1">
-                  <Button
-                    variant={viewMode === "all" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("all")}
-                    className="justify-start"
-                  >
-                    <Tv className="mr-2 h-4 w-4" />
-                    Todos
-                  </Button>
-                  <Button
-                    variant={viewMode === "series" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("series")}
-                    className="justify-start"
-                  >
-                    <ListVideo className="mr-2 h-4 w-4" />
-                    Séries
-                  </Button>
-                  <Button
-                    variant={viewMode === "movies" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("movies")}
-                    className="justify-start"
-                  >
-                    <Film className="mr-2 h-4 w-4" />
-                    Filmes
-                  </Button>
-                </div>
-              </div>
-            </div>
+
           </div>
 
           {/* Main content area */}
@@ -551,12 +517,41 @@ export function IPTVContent() {
                     ? "Todos os Canais"
                     : activeCategory}
               </h2>
-              {(isLoading || isSearching) && (
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {isSearching ? "Buscando..." : "Carregando..."}
-                </div>
-              )}
+
+              <div className="flex items-center gap-2">
+
+                {(isLoading || isSearching) && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {isSearching ? "Buscando..." : "Carregando..."}
+                  </div>
+                )}
+
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex items-center gap-2">
+                      <Film className="h-4 w-4" />
+                      {viewMode === "all"
+                        ? "Todos"
+                        : viewMode === "series"
+                          ? "Séries"
+                          : "Filmes"}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setViewMode("all")}>
+                      Todos
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setViewMode("series")}>
+                      Séries
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setViewMode("movies")}>
+                      Filmes
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
 
             {/* Tabs for Dubbed/Subbed */}
@@ -625,9 +620,9 @@ export function IPTVContent() {
                                       // Try to fetch from TMDB when image fails
                                       fetchTMDBThumbnail(item).then((url) => {
                                         if (url) {
-                                          ;(e.target as HTMLImageElement).src = url
+                                          ; (e.target as HTMLImageElement).src = url
                                         } else {
-                                          ;(e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
+                                          ; (e.target as HTMLImageElement).src = `/placeholder.svg?height=180&width=320`
                                         }
                                       })
                                     }}

@@ -4,7 +4,7 @@
  * @param forceHours Força a exibição de horas mesmo se for zero
  * @returns String formatada no formato MM:SS ou HH:MM:SS
  */
-export function formatTime(timeInSeconds: number, forceHours = false): string {
+export function formatTime(timeInSeconds: number, forceHours = true): string {
     if (isNaN(timeInSeconds)) return "00:00"
   
     const hours = Math.floor(timeInSeconds / 3600)
